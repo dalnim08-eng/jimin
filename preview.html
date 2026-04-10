@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>광공해 자가진단 - 원판형 시점 천구</title>
+  <style>
+    :root {
+      --bg1: #07101c;
+      --bg2: #0c1d34;
+      --panel: rgba(8, 17, 31, 0.86);
+      --panel2: rgba(255,255,255,0.06);
+      --text: #eef5ff;
+      --muted: #b9c8df;
+      --accent: #8bb8ff;
+      --accent2: #ffd166;
+      --good: #78e2a8;
+      --warn: #ffba72;
+      --bad: #ff8989;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 10%, rgba(92, 134, 219, 0.22), transparent 18%),
+        radial-gradient(circle at 82% 12%, rgba(255, 209, 102, 0.10), transparent 18%),
+        linear-gradient(180deg, #030712 0%, #09111e 48%, #0f1c31 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      width: min(1280px, calc(100% - 20px));
+      margin: 16px auto 24px;
+      display: grid;
+      gap: 14px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(8px);
+    }
+    .hero { padding: 18px; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.35rem, 2.8vw, 2rem); }
+    h2 { margin: 0 0 8px; font-size: 1.08rem; }
+    .sub, .small, .footer-note { color: var(--muted); line-height: 1.6; }
+    .sub { margin: 0; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 14px;
+    }
+    .panel { padding: 14px; }
+    .sky-box { position: relative; overflow: hidden; }
+    #skyCanvas {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      display: block;
+      border-radius: 18px;
+      background: radial-gradient(circle at 50% 45%, #10224a 0%, #08152d 55%, #040913 100%);
+      border: 1px solid rgba(255,255,255,0.08);
+      cursor: grab;
+      touch-action: none;
+    }
+    #skyCanvas.dragging { cursor: grabbing; }
+    .sky-help {
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      background: rgba(0,0,0,0.28);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.9rem;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+    .controls { display: grid; gap: 12px; margin-top: 12px; }
+    .button-row, .input-row, .slider-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    button, input, select {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+    }
+    button {
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.10);
+      border-color: rgba(255,255,255,0.18);
+    }
+    button.active {
+      background: linear-gradient(135deg, rgba(139,184,255,0.34), rgba(255,209,102,0.16));
+      border-color: rgba(139,184,255,0.54);
+      box-shadow: 0 0 0 1px rgba(139,184,255,0.15) inset;
+    }
+    input[type="number"] { width: 110px; }
+    input[type="datetime-local"] { min-width: 210px; }
+    input[type="range"] {
+      width: min(260px, 100%);
+      padding: 0;
+      background: transparent;
+      border: none;
+    }
+    .card {
+      background: var(--panel2);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 14px;
+      margin-top: 12px;
+    }
+    .label {
+      display: inline-block;
+      font-size: 0.82rem;
+      color: #d8e6ff;
+      background: rgba(139,184,255,0.14);
+      border: 1px solid rgba(139,184,255,0.25);
+      padding: 5px 10px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+    .selected-name { font-size: 1.2rem; font-weight: 700; margin: 0 0 8px; }
+    .kv, .form-grid { display: grid; gap: 8px; margin-top: 10px; }
+    .kv div, .pill, .result-box, .view-box {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .tip {
+      border-left: 4px solid var(--accent2);
+      padding-left: 10px;
+      color: #ffefb9;
+      margin-top: 12px;
+      font-size: 0.93rem;
+      line-height: 1.6;
+    }
+    .list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+      max-height: 290px;
+      overflow: auto;
+    }
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }
+    .list-item:hover { background: rgba(255,255,255,0.08); }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; background: var(--accent2);
+      box-shadow: 0 0 12px rgba(255,209,102,0.8); flex: 0 0 auto;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .status-grid { grid-template-columns: 1fr; }
+      .mini-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>광공해 자가진단용 원판형 시점 천구</h1>
+      <p class="sub">이제 옆에서 보는 2차원 천구가 아니라, 관측자가 실제로 하늘을 올려다보는 느낌의 원판형 시점으로 바꾸었습니다. 마우스로 드래그해서 시점을 돌리고, 고개를 들거나 내릴 수 있으며, 기존의 계절 버튼·자동 선택·시간 회전 기능도 그대로 유지됩니다.</p>
+    </section>
+
+    <div class="layout">
+      <section class="panel sky-box">
+        <canvas id="skyCanvas" width="900" height="900" aria-label="원판형 시점 천구"></canvas>
+        <div class="sky-help">드래그: 시점 회전 · 클릭: 근처 대표 천체 선택</div>
+
+        <div class="controls">
+          <div>
+            <div class="small">관측 조건</div>
+            <div class="input-row">
+              <label>위도 <input id="latInput" type="number" step="0.1" min="-90" max="90" value="37.6"></label>
+              <label>경도 <input id="lonInput" type="number" step="0.1" min="-180" max="180" value="127.0"></label>
+              <label>날짜/시간 <input id="timeInput" type="datetime-local"></label>
+              <button id="nowBtn">현재 시각</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">회전 제어</div>
+            <div class="button-row">
+              <button id="playBtn" class="active">천구 회전: 재생 중</button>
+              <button class="speedBtn" data-speed="60">×60</button>
+              <button class="speedBtn active" data-speed="600">×600</button>
+              <button class="speedBtn" data-speed="3600">×3600</button>
+              <button id="toggleNearest" class="active">근처 천체 자동 선택: 켜짐</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">시점 조작</div>
+            <div class="view-box">
+              <div class="mini-grid">
+                <label>바라보는 방위각 <input id="viewAzInput" type="range" min="0" max="359" step="1" value="180"></label>
+                <span id="viewAzText" class="mono">180°</span>
+              </div>
+              <div class="mini-grid">
+                <label>고개 각도(시선 고도) <input id="viewAltInput" type="range" min="0" max="90" step="1" value="45"></label>
+                <span id="viewAltText" class="mono">45°</span>
+              </div>
+              <div class="button-row" style="margin-top:10px;">
+                <button class="viewPreset" data-az="0" data-alt="25">북쪽</button>
+                <button class="viewPreset" data-az="90" data-alt="25">동쪽</button>
+                <button class="viewPreset active" data-az="180" data-alt="45">남쪽</button>
+                <button class="viewPreset" data-az="270" data-alt="25">서쪽</button>
+                <button class="viewPreset" data-az="180" data-alt="85">천정</button>
+                <button id="resetViewBtn">시점 초기화</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">계절별 대표 천체</div>
+            <div class="button-row" id="seasonButtons"></div>
+          </div>
+
+          <div>
+            <div class="small">보조 기능</div>
+            <div class="button-row">
+              <button id="showAllBtn">현재 시야의 대표 천체 보기</button>
+              <button id="clearBtn">선택 해제</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="label">선택된 대표 천체</div>
+        <div class="card">
+          <p class="selected-name" id="objectName">아직 선택되지 않았습니다</p>
+          <div class="small" id="objectDesc">천구를 누르거나 계절 버튼을 눌러 대표 천체를 고르세요. 현재 시야 밖의 천체는 자동으로 숨겨집니다.</div>
+          <div class="kv" id="objectMeta"></div>
+          <div class="tip">실제 진단에서는 “지금 이 방향으로 하늘을 봤을 때 무엇이 보이는가”를 고르게 하면 됩니다. 안드로메다 은하, 데네브처럼 상대적으로 어두운 천체가 보인다면 더 어두운 하늘일 가능성이 큽니다.</div>
+        </div>
+
+        <div class="card">
+          <h2>현재 하늘 상태</h2>
+          <div class="status-grid">
+            <div class="pill"><strong>항성시 근사</strong><br><span id="lstText" class="mono">-</span></div>
+            <div class="pill"><strong>현재 시야의 대표 천체</strong><br><span id="visibleCount">-</span></div>
+            <div class="pill"><strong>현재 시점</strong><br><span id="viewSummary">남쪽 / 45°</span></div>
+          </div>
+          <div class="list" id="visibleList"></div>
+        </div>
+
+        <div class="card">
+          <h2>광공해 자가진단</h2>
+          <div class="form-grid">
+            <label>은하수가 보였나요?
+              <select id="milkyWaySelect">
+                <option value="0">아니요</option>
+                <option value="1">희미하게</option>
+                <option value="2">뚜렷하게</option>
+              </select>
+            </label>
+            <label>하늘 배경은 어느 쪽에 가까웠나요?
+              <select id="skyGlowSelect">
+                <option value="3">도심처럼 밝음</option>
+                <option value="2">교외처럼 약간 밝음</option>
+                <option value="1">어두운 편</option>
+                <option value="0">매우 어두움</option>
+              </select>
+            </label>
+            <label>지금 선택한 천체를 실제로 맨눈으로 봤나요?
+              <select id="selectedSeenSelect">
+                <option value="1">예</option>
+                <option value="0">아니요</option>
+              </select>
+            </label>
+          </div>
+          <div class="result-box" id="diagnosisBox">아직 진단하지 않았습니다. 천체를 하나 고른 뒤 위 항목을 선택하면 대략적인 광공해 등급을 보여 줍니다.</div>
+        </div>
+
+        <div class="footer-note">주의: 이 모델은 교육용 간이 천구입니다. 별 위치는 실제 적경·적위를 바탕으로 계산하지만, 대표 천체 수가 제한되어 있고 지형·건물·날씨·대기투명도는 반영하지 않습니다.</div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('skyCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const latInput = document.getElementById('latInput');
+    const lonInput = document.getElementById('lonInput');
+    const timeInput = document.getElementById('timeInput');
+    const nowBtn = document.getElementById('nowBtn');
+    const playBtn = document.getElementById('playBtn');
+    const speedBtns = Array.from(document.querySelectorAll('.speedBtn'));
+    const seasonButtons = document.getElementById('seasonButtons');
+    const objectName = document.getElementById('objectName');
+    const objectDesc = document.getElementById('objectDesc');
+    const objectMeta = document.getElementById('objectMeta');
+    const visibleList = document.getElementById('visibleList');
+    const visibleCount = document.getElementById('visibleCount');
+    const lstText = document.getElementById('lstText');
+    const viewSummary = document.getElementById('viewSummary');
+    const toggleNearest = document.getElementById('toggleNearest');
+    const showAllBtn = document.getElementById('showAllBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const milkyWaySelect = document.getElementById('milkyWaySelect');
+    const skyGlowSelect = document.getElementById('skyGlowSelect');
+    const selectedSeenSelect = document.getElementById('selectedSeenSelect');
+    const diagnosisBox = document.getElementById('diagnosisBox');
+    const viewAzInput = document.getElementById('viewAzInput');
+    const viewAltInput = document.getElementById('viewAltInput');
+    const viewAzText = document.getElementById('viewAzText');
+    const viewAltText = document.getElementById('viewAltText');
+    const viewPresets = Array.from(document.querySelectorAll('.viewPreset'));
+    const resetViewBtn = document.getElementById('resetViewBtn');
+
+    let autoNearest = true;
+    let selectedObject = null;
+    let activeSeason = 'all';
+    let isPlaying = true;
+    let timeSpeed = 600;
+    let simDate = new Date();
+    let lastFrame = performance.now();
+    let currentProjected = [];
+    let clickCandidate = null;
+    let dragging = false;
+    let dragMoved = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragStartAz = 180;
+    let dragStartAlt = 45;
+
+    const seasons = [
+      { key: 'spring', label: '봄' },
+      { key: 'summer', label: '여름' },
+      { key: 'autumn', label: '가을' },
+      { key: 'winter', label: '겨울' },
+      { key: 'all', label: '전체' },
+    ];
+
+    const representativeObjects = [
+      { id:'regulus', name:'레굴루스', season:'spring', ra:10.139, dec:11.97, mag:1.35, type:'별', hint:'봄철 사자자리의 대표 별', note:'봄철 사자자리의 중심이 되는 밝은 별입니다.' },
+      { id:'spica', name:'스피카', season:'spring', ra:13.420, dec:-11.16, mag:0.98, type:'별', hint:'처녀자리의 밝은 별', note:'봄철 남쪽 하늘에서 눈에 띄는 푸른빛 별입니다.' },
+      { id:'arcturus', name:'아크투루스', season:'spring', ra:14.261, dec:19.18, mag:-0.05, type:'별', hint:'목동자리의 주황빛 별', note:'봄철 곡선을 따라 찾기 쉬운 주황색 별입니다.' },
+      { id:'vega', name:'직녀성(베가)', season:'summer', ra:18.615, dec:38.78, mag:0.03, type:'별', hint:'여름철 삼각형의 한 꼭짓점', note:'여름 밤하늘의 대표적인 청백색 별입니다.' },
+      { id:'altair', name:'견우성(알타이르)', season:'summer', ra:19.846, dec:8.87, mag:0.77, type:'별', hint:'독수리자리의 대표 별', note:'직녀성과 함께 칠석 이야기로 잘 알려져 있습니다.' },
+      { id:'deneb', name:'데네브', season:'summer', ra:20.691, dec:45.28, mag:1.25, type:'별', hint:'백조자리의 꼬리별', note:'여름철 삼각형을 이루는 대표 별입니다.' },
+      { id:'antares', name:'안타레스', season:'summer', ra:16.490, dec:-26.43, mag:1.06, type:'별', hint:'전갈자리의 붉은 별', note:'붉은색이 잘 드러나는 여름철 대표 별입니다.' },
+      { id:'pegasus', name:'페가수스 사각형', season:'autumn', ra:23.000, dec:20.0, mag:2.4, type:'성군 패턴', hint:'가을철 별자리 찾기의 기준 패턴', note:'가을 하늘에서 큰 사각형 모양으로 찾는 기준 패턴입니다.' },
+      { id:'andromeda', name:'안드로메다 은하', season:'autumn', ra:0.712, dec:41.27, mag:3.4, type:'은하', hint:'가을철 대표 심원천체', note:'어두운 하늘에서는 맨눈으로도 희미하게 보일 수 있습니다.' },
+      { id:'fomalhaut', name:'포말하우트', season:'autumn', ra:22.961, dec:-29.62, mag:1.16, type:'별', hint:'남쪽 아래쪽에 외롭게 보이는 밝은 별', note:'가을철 남쪽 낮은 하늘의 고립된 밝은 별입니다.' },
+      { id:'betelgeuse', name:'베텔게우스', season:'winter', ra:5.919, dec:7.41, mag:0.5, type:'별', hint:'오리온자리의 붉은 어깨별', note:'겨울철 오리온자리를 대표하는 붉은 초거성입니다.' },
+      { id:'rigel', name:'리겔', season:'winter', ra:5.243, dec:-8.20, mag:0.13, type:'별', hint:'오리온자리의 푸른 발별', note:'오리온자리 아래쪽의 푸른빛 밝은 별입니다.' },
+      { id:'sirius', name:'시리우스', season:'winter', ra:6.752, dec:-16.72, mag:-1.46, type:'별', hint:'밤하늘에서 가장 밝은 항성', note:'겨울철 남동쪽 하늘에서 매우 강하게 빛나는 별입니다.' },
+      { id:'capella', name:'카펠라', season:'winter', ra:5.279, dec:45.99, mag:0.08, type:'별', hint:'마차부자리의 밝은 별', note:'겨울철 높은 하늘에서 쉽게 찾을 수 있습니다.' },
+    ];
+
+    const backgroundStars = Array.from({ length: 320 }, (_, i) => ({
+      id: `bg-${i}`,
+      ra: Math.random() * 24,
+      dec: -70 + Math.random() * 150,
+      mag: 1.5 + Math.random() * 4.5,
+      twinkle: Math.random() * Math.PI * 2,
+    }));
+
+    function setTimeInputFromDate(date) {
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      timeInput.value = local.toISOString().slice(0, 16);
+    }
+
+    function seasonLabel(key) {
+      return ({ spring:'봄', summer:'여름', autumn:'가을', winter:'겨울' })[key] || '전체';
+    }
+
+    function directionLabel(az) {
+      const dirs = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+      return dirs[Math.round((((az % 360) + 360) % 360) / 45) % 8];
+    }
+
+    function getFilteredObjects() {
+      return activeSeason === 'all'
+        ? representativeObjects
+        : representativeObjects.filter(obj => obj.season === activeSeason);
+    }
+
+    function createSeasonButtons() {
+      seasonButtons.innerHTML = '';
+      seasons.forEach(season => {
+        const btn = document.createElement('button');
+        btn.textContent = season.label;
+        if (season.key === activeSeason) btn.classList.add('active');
+        btn.addEventListener('click', () => {
+          activeSeason = season.key;
+          createSeasonButtons();
+          computeProjectedObjects();
+          draw();
+        });
+        seasonButtons.appendChild(btn);
+      });
+    }
+
+    function julianDate(date) {
+      return date.getTime() / 86400000 + 2440587.5;
+    }
+
+    function localSiderealHours(date, longitudeDeg) {
+      const jd = julianDate(date);
+      const d = jd - 2451545.0;
+      let gmst = 18.697374558 + 24.06570982441908 * d;
+      gmst = ((gmst % 24) + 24) % 24;
+      let lst = gmst + longitudeDeg / 15;
+      return ((lst % 24) + 24) % 24;
+    }
+
+    function equatorialToHorizontal(raHours, decDeg, lstHours, latDeg) {
+      const H = ((lstHours - raHours + 12) % 24 - 12) * 15 * Math.PI / 180;
+      const dec = decDeg * Math.PI / 180;
+      const lat = latDeg * Math.PI / 180;
+
+      const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(H);
+      const alt = Math.asin(sinAlt);
+
+      const y = -Math.sin(H) * Math.cos(dec);
+      const x = Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.sin(lat) * Math.cos(H);
+      let az = Math.atan2(y, x);
+      az = (az * 180 / Math.PI + 360) % 360;
+      return { altDeg: alt * 180 / Math.PI, azDeg: az };
+    }
+
+    function altAzToVector(azDeg, altDeg) {
+      const az = azDeg * Math.PI / 180;
+      const alt = altDeg * Math.PI / 180;
+      return {
+        x: Math.cos(alt) * Math.sin(az),
+        y: Math.cos(alt) * Math.cos(az),
+        z: Math.sin(alt),
+      };
+    }
+
+    function normalize(v) {
+      const n = Math.hypot(v.x, v.y, v.z) || 1;
+      return { x: v.x / n, y: v.y / n, z: v.z / n };
+    }
+
+    function cross(a, b) {
+      return {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x,
+      };
+    }
+
+    function dot(a, b) {
+      return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    function cameraBasis() {
+      const viewAz = Number(viewAzInput.value);
+      const viewAlt = Number(viewAltInput.value);
+      const forward = normalize(altAzToVector(viewAz, viewAlt));
+      const worldUp = Math.abs(forward.z) > 0.98 ? { x: 0, y: 1, z: 0 } : { x: 0, y: 0, z: 1 };
+      const right = normalize(cross(forward, worldUp));
+      const up = normalize(cross(right, forward));
+      return { forward, right, up };
+    }
+
+    function projectDirection(azDeg, altDeg) {
+      const v = altAzToVector(azDeg, altDeg);
+      const { forward, right, up } = cameraBasis();
+      const cx = dot(v, right);
+      const cy = dot(v, up);
+      const cz = dot(v, forward);
+      if (cz <= 0) return null;
+
+      const theta = Math.acos(Math.max(-1, Math.min(1, cz)));
+      if (theta > Math.PI / 2) return null;
+
+      const len = Math.hypot(cx, cy);
+      const nx = len > 1e-6 ? cx / len : 0;
+      const ny = len > 1e-6 ? cy / len : 0;
+      const radius = canvas.width * 0.44;
+      const r = radius * (theta / (Math.PI / 2));
+      return {
+        x: canvas.width / 2 + nx * r,
+        y: canvas.height / 2 - ny * r,
+        radial: r,
+        edgeRadius: radius,
+        angularDistDeg: theta * 180 / Math.PI,
+      };
+    }
+
+    function computeProjectedObjects() {
+      const lat = Number(latInput.value) || 0;
+      const lon = Number(lonInput.value) || 0;
+      const lst = localSiderealHours(simDate, lon);
+      lstText.textContent = `${lst.toFixed(2)} h`;
+      viewSummary.textContent = `${directionLabel(Number(viewAzInput.value))}쪽 / ${Number(viewAltInput.value)}°`;
+
+      currentProjected = getFilteredObjects().map(obj => {
+        const horiz = equatorialToHorizontal(obj.ra, obj.dec, lst, lat);
+        const p = projectDirection(horiz.azDeg, horiz.altDeg);
+        return p ? { ...obj, ...horiz, ...p, visible: true } : { ...obj, ...horiz, visible: false };
+      }).filter(obj => obj.visible).sort((a, b) => a.mag - b.mag);
+
+      visibleCount.textContent = `${currentProjected.length}개`;
+      updateVisibleList();
+      updateDiagnosis();
+    }
+
+    function updateVisibleList() {
+      visibleList.innerHTML = '';
+      if (!currentProjected.length) {
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        row.textContent = '현재 시점과 계절 조건에서 보이는 대표 천체가 없습니다.';
+        visibleList.appendChild(row);
+        return;
+      }
+      currentProjected.forEach(obj => {
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        row.innerHTML = `<span style="display:flex;align-items:center;gap:10px;"><span class="dot"></span>${obj.name}</span><span style="color:#bfd0ec;">${directionLabel(obj.azDeg)} / 고도 ${obj.altDeg.toFixed(0)}°</span>`;
+        row.addEventListener('click', () => selectObject(obj));
+        visibleList.appendChild(row);
+      });
+    }
+
+    function selectObject(obj) {
+      selectedObject = obj;
+      objectName.textContent = obj.name;
+      objectDesc.textContent = obj.note;
+      objectMeta.innerHTML = `
+        <div><strong>계절</strong> · ${seasonLabel(obj.season)}</div>
+        <div><strong>종류</strong> · ${obj.type}</div>
+        <div><strong>설명</strong> · ${obj.hint}</div>
+        <div><strong>밝기(참고)</strong> · 겉보기등급 ${obj.mag}</div>
+        <div><strong>현재 위치</strong> · ${directionLabel(obj.azDeg)}쪽, 고도 ${obj.altDeg.toFixed(1)}°, 방위각 ${obj.azDeg.toFixed(1)}°</div>
+      `;
+      updateDiagnosis();
+      draw();
+    }
+
+    function clearSelection() {
+      selectedObject = null;
+      objectName.textContent = '아직 선택되지 않았습니다';
+      objectDesc.textContent = '천구를 누르거나 계절 버튼을 눌러 대표 천체를 고르세요. 현재 시야 밖의 천체는 자동으로 숨겨집니다.';
+      objectMeta.innerHTML = '';
+      updateDiagnosis();
+      draw();
+    }
+
+    function findNearestRepresentative(px, py) {
+      let best = null;
+      let bestD = Infinity;
+      for (const obj of currentProjected) {
+        const d = Math.hypot(px - obj.x, py - obj.y);
+        if (d < bestD) {
+          best = obj;
+          bestD = d;
+        }
+      }
+      return bestD <= 42 ? best : null;
+    }
+
+    function magnitudeRadius(mag) {
+      return Math.max(1.2, 5.2 - mag * 1.0);
+    }
+
+    function drawBackground() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = canvas.width * 0.44;
+
+      const bg = ctx.createRadialGradient(cx, cy, radius * 0.04, cx, cy, radius * 1.05);
+      bg.addColorStop(0, '#16325e');
+      bg.addColorStop(0.45, '#0a1731');
+      bg.addColorStop(1, '#030812');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.save();
+      ctx.clip();
+
+      const skyGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      skyGlow.addColorStop(0, 'rgba(34, 69, 122, 0.30)');
+      skyGlow.addColorStop(0.55, 'rgba(11, 25, 50, 0.16)');
+      skyGlow.addColorStop(1, 'rgba(4, 8, 18, 0.06)');
+      ctx.fillStyle = skyGlow;
+      ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+
+      drawGrid(cx, cy, radius);
+      drawBackgroundStars(cx, cy, radius);
+      drawRepresentativeObjects();
+      ctx.restore();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      drawCompass(cx, cy, radius);
+      drawCrosshair(cx, cy);
+    }
+
+    function drawGrid(cx, cy, radius) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = 1;
+      [30, 60].forEach(thetaDeg => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * (thetaDeg / 90), 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      const bearings = [0, 45, 90, 135, 180, 225, 270, 315];
+      bearings.forEach(b => {
+        const p1 = projectDirection(b, 0);
+        const p2 = projectDirection(b, 89.9);
+        if (!p1 || !p2) return;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      });
+    }
+
+    function drawBackgroundStars(cx, cy, radius) {
+      const lat = Number(latInput.value) || 0;
+      const lon = Number(lonInput.value) || 0;
+      const lst = localSiderealHours(simDate, lon);
+      const t = performance.now() * 0.002;
+
+      backgroundStars.forEach(star => {
+        const horiz = equatorialToHorizontal(star.ra, star.dec, lst, lat);
+        const p = projectDirection(horiz.azDeg, horiz.altDeg);
+        if (!p) return;
+        const tw = 0.75 + 0.25 * Math.sin(t + star.twinkle);
+        const r = Math.max(0.6, 2.2 - star.mag * 0.22) * tw;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0.18, 0.9 - star.mag * 0.12)})`;
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawRepresentativeObjects() {
+      currentProjected.forEach(obj => {
+        const isSelected = selectedObject && selectedObject.id === obj.id;
+        const isCandidate = clickCandidate && clickCandidate.id === obj.id;
+        const radius = magnitudeRadius(obj.mag) + (isSelected ? 2.6 : 0);
+
+        ctx.beginPath();
+        ctx.fillStyle = isSelected ? '#ffd166' : '#f7fbff';
+        ctx.arc(obj.x, obj.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSelected || isCandidate) {
+          ctx.beginPath();
+          ctx.strokeStyle = isSelected ? 'rgba(255,209,102,0.95)' : 'rgba(139,184,255,0.8)';
+          ctx.lineWidth = 1.6;
+          ctx.arc(obj.x, obj.y, radius + 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = 'rgba(233,242,255,0.90)';
+        ctx.font = isSelected ? '700 18px sans-serif' : '13px sans-serif';
+        ctx.fillText(obj.name, obj.x + 10, obj.y - 8);
+      });
+    }
+
+    function drawCompass(cx, cy, radius) {
+      const marks = [
+        { az: 0, label: '북' },
+        { az: 90, label: '동' },
+        { az: 180, label: '남' },
+        { az: 270, label: '서' },
+      ];
+      ctx.fillStyle = 'rgba(255,255,255,0.84)';
+      ctx.font = '600 18px sans-serif';
+      marks.forEach(mark => {
+        const p = projectDirection(mark.az, 0);
+        if (!p) return;
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        const tx = cx + dx / len * (radius + 22);
+        const ty = cy + dy / len * (radius + 22);
+        ctx.fillText(mark.label, tx - 9, ty + 6);
+      });
+    }
+
+    function drawCrosshair(cx, cy) {
+      ctx.strokeStyle = 'rgba(139,184,255,0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - 16, cy);
+      ctx.lineTo(cx + 16, cy);
+      ctx.moveTo(cx, cy - 16);
+      ctx.lineTo(cx, cy + 16);
+      ctx.stroke();
+    }
+
+    function updateDiagnosis() {
+      if (!selectedObject) {
+        diagnosisBox.textContent = '아직 진단하지 않았습니다. 천체를 하나 고른 뒤 위 항목을 선택하면 대략적인 광공해 등급을 보여 줍니다.';
+        return;
+      }
+
+      const milky = Number(milkyWaySelect.value);
+      const glow = Number(skyGlowSelect.value);
+      const seen = Number(selectedSeenSelect.value);
+      let score = 0;
+
+      if (selectedObject.mag <= 0.2 && seen) score += 1;
+      else if (selectedObject.mag <= 1.3 && seen) score += 2;
+      else if (selectedObject.mag <= 2.5 && seen) score += 3;
+      else if (selectedObject.mag > 2.5 && seen) score += 4;
+      else score -= 1;
+
+      score += milky * 2;
+      score += (3 - glow);
+
+      let bortle, tone;
+      if (score >= 8) { bortle = '보틀 3~4급'; tone = 'good'; }
+      else if (score >= 5) { bortle = '보틀 5~6급'; tone = 'warn'; }
+      else { bortle = '보틀 7~9급'; tone = 'bad'; }
+
+      diagnosisBox.innerHTML = `<strong class="${tone}">${bortle} 수준으로 추정</strong><br>선택 천체: ${selectedObject.name} (겉보기등급 ${selectedObject.mag}) · 은하수 응답과 하늘 밝기 응답을 함께 반영한 교육용 간이 추정입니다. 실제 광공해 평가는 관측 적응 시간, 지평선 광원, 대기 투명도에 따라 달라질 수 있습니다.`;
+    }
+
+    function updateViewTexts() {
+      viewAzText.textContent = `${Number(viewAzInput.value)}°`;
+      viewAltText.textContent = `${Number(viewAltInput.value)}°`;
+      viewSummary.textContent = `${directionLabel(Number(viewAzInput.value))}쪽 / ${Number(viewAltInput.value)}°`;
+
+      viewPresets.forEach(btn => {
+        const az = Number(btn.dataset.az);
+        const alt = Number(btn.dataset.alt);
+        const active = az === Number(viewAzInput.value) && alt === Number(viewAltInput.value);
+        btn.classList.toggle('active', active);
+      });
+    }
+
+    function draw() {
+      computeProjectedObjects();
+      drawBackground();
+    }
+
+    function animationFrame(now) {
+      const dt = (now - lastFrame) / 1000;
+      lastFrame = now;
+      if (isPlaying) {
+        simDate = new Date(simDate.getTime() + dt * 1000 * timeSpeed);
+        setTimeInputFromDate(simDate);
+      }
+      draw();
+      requestAnimationFrame(animationFrame);
+    }
+
+    function setSimFromInput() {
+      simDate = timeInput.value ? new Date(timeInput.value) : new Date();
+      draw();
+    }
+
+    function canvasPoint(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return {
+        x: (evt.clientX - rect.left) * scaleX,
+        y: (evt.clientY - rect.top) * scaleY,
+      };
+    }
+
+    function startDrag(evt) {
+      dragging = true;
+      dragMoved = false;
+      const p = canvasPoint(evt);
+      dragStartX = p.x;
+      dragStartY = p.y;
+      dragStartAz = Number(viewAzInput.value);
+      dragStartAlt = Number(viewAltInput.value);
+      canvas.classList.add('dragging');
+    }
+
+    function moveDrag(evt) {
+      if (!dragging) return;
+      const p = canvasPoint(evt);
+      const dx = p.x - dragStartX;
+      const dy = p.y - dragStartY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+
+      let newAz = dragStartAz - dx * 0.18;
+      let newAlt = dragStartAlt + dy * 0.12;
+      newAz = ((newAz % 360) + 360) % 360;
+      newAlt = Math.max(0, Math.min(90, newAlt));
+      viewAzInput.value = String(Math.round(newAz));
+      viewAltInput.value = String(Math.round(newAlt));
+      updateViewTexts();
+      draw();
+    }
+
+    function endDrag(evt) {
+      if (!dragging) return;
+      canvas.classList.remove('dragging');
+      dragging = false;
+      if (!dragMoved) {
+        const p = canvasPoint(evt);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const radius = canvas.width * 0.44;
+        if (Math.hypot(p.x - cx, p.y - cy) <= radius) {
+          const nearest = findNearestRepresentative(p.x, p.y);
+          if (nearest && autoNearest) selectObject(nearest);
+        }
+      }
+    }
+
+    canvas.addEventListener('pointerdown', (evt) => {
+      canvas.setPointerCapture(evt.pointerId);
+      startDrag(evt);
+    });
+    canvas.addEventListener('pointermove', (evt) => {
+      const p = canvasPoint(evt);
+      clickCandidate = findNearestRepresentative(p.x, p.y);
+      if (dragging) moveDrag(evt);
+    });
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', () => {
+      dragging = false;
+      canvas.classList.remove('dragging');
+    });
+    canvas.addEventListener('mouseleave', () => { clickCandidate = null; });
+
+    latInput.addEventListener('input', draw);
+    lonInput.addEventListener('input', draw);
+    timeInput.addEventListener('change', setSimFromInput);
+
+    nowBtn.addEventListener('click', () => {
+      simDate = new Date();
+      setTimeInputFromDate(simDate);
+      draw();
+    });
+
+    playBtn.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      playBtn.textContent = isPlaying ? '천구 회전: 재생 중' : '천구 회전: 일시정지';
+      playBtn.classList.toggle('active', isPlaying);
+    });
+
+    speedBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        timeSpeed = Number(btn.dataset.speed);
+        speedBtns.forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    toggleNearest.addEventListener('click', () => {
+      autoNearest = !autoNearest;
+      toggleNearest.classList.toggle('active', autoNearest);
+      toggleNearest.textContent = `근처 천체 자동 선택: ${autoNearest ? '켜짐' : '꺼짐'}`;
+    });
+
+    showAllBtn.addEventListener('click', () => {
+      alert(currentProjected.length
+        ? currentProjected.map(obj => `${obj.name} · ${directionLabel(obj.azDeg)} · 고도 ${obj.altDeg.toFixed(1)}°`).join('\n')
+        : '현재 시점에서 보이는 대표 천체가 없습니다.');
+    });
+
+    clearBtn.addEventListener('click', clearSelection);
+    milkyWaySelect.addEventListener('change', updateDiagnosis);
+    skyGlowSelect.addEventListener('change', updateDiagnosis);
+    selectedSeenSelect.addEventListener('change', updateDiagnosis);
+
+    viewAzInput.addEventListener('input', () => { updateViewTexts(); draw(); });
+    viewAltInput.addEventListener('input', () => { updateViewTexts(); draw(); });
+
+    viewPresets.forEach(btn => {
+      btn.addEventListener('click', () => {
+        viewAzInput.value = btn.dataset.az;
+        viewAltInput.value = btn.dataset.alt;
+        updateViewTexts();
+        draw();
+      });
+    });
+
+    resetViewBtn.addEventListener('click', () => {
+      viewAzInput.value = '180';
+      viewAltInput.value = '45';
+      updateViewTexts();
+      draw();
+    });
+
+    setTimeInputFromDate(simDate);
+    createSeasonButtons();
+    updateViewTexts();
+    draw();
+    requestAnimationFrame(animationFrame);
+  </script>
+</body>
+</html>
