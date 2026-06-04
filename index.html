@@ -1,0 +1,2453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>광공해 자가진단 프로그램</title>
+  <style>
+    :root {
+      --bg1: #07101c;
+      --bg2: #0c1d34;
+      --panel: rgba(8, 17, 31, 0.86);
+      --panel2: rgba(255,255,255,0.06);
+      --text: #eef5ff;
+      --muted: #b9c8df;
+      --accent: #8bb8ff;
+      --accent2: #ffd166;
+      --good: #78e2a8;
+      --warn: #ffba72;
+      --bad: #ff8989;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 10%, rgba(92, 134, 219, 0.22), transparent 18%),
+        radial-gradient(circle at 82% 12%, rgba(255, 209, 102, 0.10), transparent 18%),
+        linear-gradient(180deg, #030712 0%, #09111e 48%, #0f1c31 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      width: min(1280px, calc(100% - 20px));
+      margin: 16px auto 24px;
+      display: grid;
+      gap: 14px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(8px);
+    }
+    .hero { padding: 18px; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.35rem, 2.8vw, 2rem); }
+    h2 { margin: 0 0 8px; font-size: 1.08rem; }
+    .sub, .small, .footer-note { color: var(--muted); line-height: 1.6; }
+    .sub { margin: 0; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 14px;
+    }
+    .panel { padding: 14px; }
+    .sky-box { position: relative; overflow: hidden; }
+    #skyCanvas {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      display: block;
+      border-radius: 18px;
+      background: radial-gradient(circle at 50% 45%, #10224a 0%, #08152d 55%, #040913 100%);
+      border: 1px solid rgba(255,255,255,0.08);
+      cursor: grab;
+      touch-action: none;
+    }
+    #skyCanvas.dragging { cursor: grabbing; }
+    .sky-help {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      margin: 8px 0 0;
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.88rem;
+      line-height: 1.45;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+    .controls { display: grid; gap: 12px; margin-top: 12px; }
+    .button-row, .input-row, .slider-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    button, input, select {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+    }
+    button {
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.10);
+      border-color: rgba(255,255,255,0.18);
+    }
+    button.active {
+      background: linear-gradient(135deg, rgba(139,184,255,0.34), rgba(255,209,102,0.16));
+      border-color: rgba(139,184,255,0.54);
+      box-shadow: 0 0 0 1px rgba(139,184,255,0.15) inset;
+    }
+    .survey-field {
+      display: grid;
+      gap: 8px;
+    }
+    .survey-title {
+      color: var(--text);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .survey-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .survey-option {
+      border-radius: 12px;
+      min-height: 42px;
+      text-align: center;
+      background: rgba(255,255,255,0.055);
+    }
+    .survey-option.active {
+      background: linear-gradient(135deg, rgba(139,184,255,0.36), rgba(255,209,102,0.14));
+      border-color: rgba(139,184,255,0.64);
+    }
+    .native-select-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    select option {
+      color: #eef5ff;
+      background: #172234;
+    }
+    .save-observation-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #saveObservationBtn {
+      width: 100%;
+      justify-content: center;
+      border-radius: 14px;
+      font-weight: 700;
+    }
+    #saveObservationBtn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .pending-observation-status {
+      min-height: 1.5em;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    input[type="number"] { width: 110px; }
+    input[type="datetime-local"] { min-width: 210px; }
+    input[type="range"] {
+      width: min(360px, 100%);
+      height: 28px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(139,184,255,0.75), rgba(255,209,102,0.65));
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      margin-top: -8px;
+      border-radius: 50%;
+      background: #eef5ff;
+      border: 2px solid rgba(139,184,255,0.95);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(139,184,255,0.75), rgba(255,209,102,0.65));
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #eef5ff;
+      border: 2px solid rgba(139,184,255,0.95);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    .card {
+      background: var(--panel2);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 14px;
+      margin-top: 12px;
+    }
+    .label {
+      display: inline-block;
+      font-size: 0.82rem;
+      color: #d8e6ff;
+      background: rgba(139,184,255,0.14);
+      border: 1px solid rgba(139,184,255,0.25);
+      padding: 5px 10px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+    .selected-name { font-size: 1.2rem; font-weight: 700; margin: 0 0 8px; }
+    .kv, .form-grid { display: grid; gap: 8px; margin-top: 10px; }
+    .kv div, .pill, .result-box, .view-box {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .tip {
+      border-left: 4px solid var(--accent2);
+      padding-left: 10px;
+      color: #ffefb9;
+      margin-top: 12px;
+      font-size: 0.93rem;
+      line-height: 1.6;
+    }
+    .list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+      max-height: 290px;
+      overflow: auto;
+    }
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }
+    .list-item:hover { background: rgba(255,255,255,0.08); }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; background: var(--accent2);
+      box-shadow: 0 0 12px rgba(255,209,102,0.8); flex: 0 0 auto;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .mini-grid label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .mini-grid .mono {
+      min-width: 56px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .sensor-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .sensor-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 12px rgba(255,186,114,0.6);
+      flex: 0 0 auto;
+    }
+    .sensor-dot.on {
+      background: var(--good);
+      box-shadow: 0 0 12px rgba(120,226,168,0.7);
+    }
+    .observe-card {
+      border: 1px solid rgba(139,184,255,0.20);
+      background: linear-gradient(180deg, rgba(139,184,255,0.10), rgba(255,255,255,0.04));
+    }
+    .candidate-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .choice-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .choice-row button {
+      border-radius: 14px;
+      min-height: 44px;
+    }
+    .diagnosis-card .tip { margin-top: 0; margin-bottom: 10px; }
+    .observation-summary {
+      max-height: 150px;
+      overflow: auto;
+    }
+    .observation-entry {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .observation-entry:last-child { border-bottom: 0; }
+    .observation-entry span:last-child { color: var(--muted); white-space: nowrap; }
+    .hidden { display: none !important; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background:
+        radial-gradient(circle at 50% 30%, rgba(139,184,255,0.14), transparent 34%),
+        rgba(1, 6, 14, 0.72);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-card {
+      width: min(520px, 100%);
+      max-height: min(78vh, 680px);
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(10, 22, 42, 0.98), rgba(5, 12, 24, 0.98));
+      border: 1px solid rgba(139,184,255,0.24);
+      border-radius: 22px;
+      box-shadow: 0 26px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+      padding: 18px;
+      color: var(--text);
+    }
+    .modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-bottom: 12px;
+    }
+    .modal-title-wrap { display: grid; gap: 5px; }
+    .modal-kicker {
+      width: fit-content;
+      color: var(--accent2);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: rgba(255,209,102,0.10);
+      border: 1px solid rgba(255,209,102,0.20);
+      border-radius: 999px;
+      padding: 4px 9px;
+    }
+    .modal-title {
+      margin: 0;
+      font-size: clamp(1.25rem, 4vw, 1.65rem);
+      line-height: 1.25;
+    }
+    .modal-close {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+    .modal-body {
+      display: grid;
+      gap: 12px;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+    .modal-result-band {
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.09);
+    }
+    .modal-result-band.good { border-color: rgba(120,226,168,0.35); background: rgba(120,226,168,0.08); }
+    .modal-result-band.warn { border-color: rgba(255,186,114,0.38); background: rgba(255,186,114,0.08); }
+    .modal-result-band.bad { border-color: rgba(255,137,137,0.38); background: rgba(255,137,137,0.08); }
+    .modal-bortle {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .modal-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .modal-stat {
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+    .modal-stat strong {
+      display: block;
+      color: var(--text);
+      font-size: 1.08rem;
+      margin-top: 2px;
+    }
+    .modal-note {
+      border-left: 4px solid var(--accent2);
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,209,102,0.07);
+      color: #ffefb9;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .modal-primary {
+      min-width: 110px;
+      font-weight: 800;
+      background: linear-gradient(135deg, rgba(139,184,255,0.34), rgba(255,209,102,0.18));
+      border-color: rgba(139,184,255,0.48);
+    }
+    @media (max-width: 560px) {
+      .modal-stat-grid { grid-template-columns: 1fr; }
+      .modal-card { border-radius: 18px; padding: 15px; }
+    }
+
+    @media (max-width: 980px) {
+      body { overscroll-behavior-y: contain; }
+      .wrap { width: min(100% - 12px, 820px); margin: 8px auto 16px; gap: 10px; }
+      .hero, .panel { border-radius: 16px; }
+      .hero { padding: 14px; }
+      .layout { grid-template-columns: 1fr; gap: 10px; }
+      .panel { padding: 10px; }
+      #skyCanvas { max-height: 72vh; }
+      .sky-help { font-size: 0.78rem; padding: 7px 10px; border-radius: 14px; }
+      input[type="range"] { width: 100%; height: 34px; }
+      input[type="range"]::-webkit-slider-runnable-track { height: 10px; }
+      input[type="range"]::-webkit-slider-thumb { width: 26px; height: 26px; margin-top: -9px; }
+      input[type="range"]::-moz-range-track { height: 10px; }
+      input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; }
+      button, input, select { font-size: 1rem; min-height: 44px; }
+      input[type="number"] { width: 96px; }
+      input[type="datetime-local"] { width: min(100%, 230px); min-width: 0; }
+      .status-grid { grid-template-columns: 1fr; }
+      .mini-grid { grid-template-columns: 1fr; }
+      .choice-row { grid-template-columns: 1fr; }
+      .survey-options { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>광공해 자가진단 프로그램</h1>
+      <p class="sub">관측 위치·현재 시각·스마트폰 방향 센서를 바탕으로 실제 하늘 방향의 대표 천체를 확인하고, 보이는 정도와 하늘 밝기 정보를 통해 주변 광공해 정도를 간단히 자가진단할 수 있는 프로그램입니다.</p>
+    </section>
+
+    <div class="layout">
+      <section class="panel sky-box">
+        <canvas id="skyCanvas" width="900" height="900" aria-label="원판형 시점 천구"></canvas>
+        <div class="sky-help">드래그/슬라이더: 수동 회전 · 모바일: 센서로 실제 하늘 조준</div>
+
+        <div class="controls">
+          <div>
+            <div class="small">관측 조건</div>
+            <div class="input-row">
+              <label>위도 <input id="latInput" type="number" step="0.1" min="-90" max="90" value="37.6"></label>
+              <label>경도 <input id="lonInput" type="number" step="0.1" min="-180" max="180" value="127.0"></label>
+              <label>날짜/시간 <input id="timeInput" type="datetime-local"></label>
+              <button id="nowBtn">현재 시각</button>
+              <button id="geoBtn">현재 위치 사용</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">모바일 관측 모드</div>
+            <div class="button-row">
+              <button id="sensorBtn">스마트폰 방향 센서 사용</button>
+              <button id="manualBtn" class="active">수동 조작 모드</button>
+              <span class="sensor-status"><span id="sensorDot" class="sensor-dot"></span><span id="sensorStatus">센서 대기 중 · PC에서는 수동 조작을 사용하세요.</span></span>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">회전 제어</div>
+            <div class="button-row">
+              <button id="playBtn">천구 회전: 일시정지</button>
+              <button class="speedBtn active" data-speed="60">×60</button>
+              <button class="speedBtn" data-speed="600">×600</button>
+              <button class="speedBtn" data-speed="3600">×3600</button>
+              <button id="toggleNearest" class="active">근처 천체 자동 선택: 켜짐</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">시점 조작</div>
+            <div class="view-box">
+              <div class="mini-grid">
+                <label>바라보는 방위각 <input id="viewAzInput" type="range" min="0" max="359" step="1" value="180"></label>
+                <span id="viewAzText" class="mono">180°</span>
+              </div>
+              <div class="mini-grid">
+                <label>고개 각도(시선 고도) <input id="viewAltInput" type="range" min="0" max="90" step="1" value="45"></label>
+                <span id="viewAltText" class="mono">45°</span>
+              </div>
+              <div class="mini-grid">
+                <label>천구 확대 <input id="zoomInput" type="range" min="1" max="4" step="0.1" value="1"></label>
+                <span id="zoomText" class="mono">1.0×</span>
+              </div>
+              <div class="button-row" style="margin-top:8px;">
+                <button id="zoomOutBtn" type="button">− 축소</button>
+                <button id="zoomInBtn" type="button">+ 확대</button>
+                <button id="zoomResetBtn" type="button">확대 초기화</button>
+              </div>
+              <div class="button-row" style="margin-top:10px;">
+                <button class="viewPreset" data-az="0" data-alt="25">북쪽</button>
+                <button class="viewPreset" data-az="90" data-alt="25">동쪽</button>
+                <button class="viewPreset active" data-az="180" data-alt="45">남쪽</button>
+                <button class="viewPreset" data-az="270" data-alt="25">서쪽</button>
+                <button class="viewPreset" data-az="180" data-alt="85">천정</button>
+                <button id="resetViewBtn">시점 초기화</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="small">계절별 대표 천체</div>
+            <div class="button-row" id="seasonButtons"></div>
+          </div>
+
+          <div>
+            <div class="small">보조 기능</div>
+            <div class="button-row">
+              <button id="showAllBtn">현재 시야의 대표 천체 보기</button>
+              <button id="showConstellationBtn" class="active">별자리선: 켜짐</button>
+              <button id="showMilkyWayBtn" class="active">은하수 영역: 켜짐</button>
+              <button id="showSolarSystemBtn" class="active">달·행성: 켜짐</button>
+              <button id="showCrosshairBtn" class="active">원형 조준선: 켜짐</button>
+              <button id="clearBtn">선택 해제</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="label">선택된 대표 천체</div>
+        <div class="card observe-card" id="observeCard">
+          <h2>실시간 관측 질문</h2>
+          <div class="candidate-row">
+            <div class="result-box" id="observePrompt">위치와 시간을 맞춘 뒤 스마트폰을 하늘 방향으로 들어 보세요. 현재 시야에서 광공해 진단에 쓸 수 있는 천체를 자동으로 추천합니다.</div>
+            <div class="choice-row">
+              <button class="visibilityBtn" data-visibility="2">뚜렷하게 보임</button>
+              <button class="visibilityBtn" data-visibility="1">희미하게 보임</button>
+              <button class="visibilityBtn" data-visibility="0">안 보임</button>
+            </div>
+            <div class="save-observation-row">
+              <button id="saveObservationBtn" disabled>관측 기록 저장</button>
+              <div class="pending-observation-status" id="pendingObservationStatus">보이는 정도를 선택한 뒤 저장하면 관측 기록에 반영됩니다.</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <p class="selected-name" id="objectName">아직 선택되지 않았습니다</p>
+          <div class="small" id="objectDesc">천구를 누르거나 계절 버튼을 눌러 대표 천체를 고르세요. 현재 시야 밖의 천체는 자동으로 숨겨집니다.</div>
+          <div class="kv" id="objectMeta"></div>
+          <div class="tip">선택된 천체 정보는 관측 판단을 돕기 위한 참고입니다. 실제 보틀 등급 추정은 위의 실시간 관측 질문에서 누적한 “보임/희미함/안 보임” 기록을 우선 사용합니다.</div>
+        </div>        <div class="card diagnosis-card">
+          <h2>광공해 자가진단</h2>
+          <div class="tip">진단은 위의 “실시간 관측 질문”에서 누적한 관측 기록을 중심으로 계산합니다. 보이는 가장 어두운 천체가 핵심 지표이고, 은하수와 하늘 배경은 보조 지표로만 반영됩니다.</div>
+          <div class="form-grid">
+            <div class="survey-field">
+              <div class="survey-title">은하수가 보였나요?</div>
+              <select id="milkyWaySelect" class="native-select-hidden" aria-hidden="true" tabindex="-1">
+                <option value="0">아니요</option>
+                <option value="1">희미하게</option>
+                <option value="2">뚜렷하게</option>
+              </select>
+              <div class="survey-options" role="group" aria-label="은하수 관측 여부">
+                <button class="survey-option active" data-select="milkyWaySelect" data-value="0">안 보임</button>
+                <button class="survey-option" data-select="milkyWaySelect" data-value="1">희미하게 보임</button>
+                <button class="survey-option" data-select="milkyWaySelect" data-value="2">뚜렷하게 보임</button>
+              </div>
+            </div>
+            <div class="survey-field">
+              <div class="survey-title">하늘 배경은 어느 쪽에 가까웠나요?</div>
+              <select id="skyGlowSelect" class="native-select-hidden" aria-hidden="true" tabindex="-1">
+                <option value="3">도심처럼 밝음</option>
+                <option value="2">교외처럼 약간 밝음</option>
+                <option value="1" selected>어두운 편</option>
+                <option value="0">매우 어두움</option>
+              </select>
+              <div class="survey-options" role="group" aria-label="하늘 배경 밝기">
+                <button class="survey-option" data-select="skyGlowSelect" data-value="3">도심처럼 밝음</button>
+                <button class="survey-option" data-select="skyGlowSelect" data-value="2">교외처럼 약간 밝음</button>
+                <button class="survey-option active" data-select="skyGlowSelect" data-value="1">어두운 편</button>
+                <button class="survey-option" data-select="skyGlowSelect" data-value="0">매우 어두움</button>
+              </div>
+            </div>
+          </div>
+          <div class="result-box observation-summary" id="observationSummary">아직 관측 기록이 없습니다. 현재 조준 방향의 추천 천체가 실제로 보이는지 먼저 선택해 주세요.</div>
+          <div class="button-row" style="margin-top:10px;">
+            <button id="estimateBortleBtn">보틀 등급 추정하기</button>
+            <button id="resetObservationsBtn">관측 기록 초기화</button>
+          </div>
+          <div class="result-box" id="diagnosisBox">아직 진단하지 않았습니다. 최소 1개 이상의 천체 관측 기록을 입력한 뒤 “보틀 등급 추정하기”를 눌러 주세요.</div>
+        </div>
+
+        <div class="card">
+          <h2>현재 하늘 상태</h2>
+          <div class="status-grid">
+            <div class="pill"><strong>항성시 근사</strong><br><span id="lstText" class="mono">-</span></div>
+            <div class="pill"><strong>현재 시야의 대표 천체</strong><br><span id="visibleCount">-</span></div>
+            <div class="pill"><strong>현재 시점</strong><br><span id="viewSummary">남쪽 / 45°</span></div>
+          </div>
+          <div class="list" id="visibleList"></div>
+        </div>
+
+
+
+        <div class="footer-note">주의: 이 모델은 교육용 간이 천구입니다. 별 위치는 실제 적경·적위를 바탕으로 계산하지만, 대표 천체 수가 제한되어 있고 지형·건물·날씨·대기투명도는 반영하지 않습니다.</div>
+      </aside>
+    </div>
+  </div>
+
+
+  <div class="modal-backdrop" id="resultModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resultModalTitle">
+      <div class="modal-head">
+        <div class="modal-title-wrap">
+          <div class="modal-kicker">광공해 자가진단 결과</div>
+          <h2 class="modal-title" id="resultModalTitle">보틀 등급 추정 결과</h2>
+        </div>
+        <button class="modal-close" id="resultModalClose" aria-label="결과 창 닫기">×</button>
+      </div>
+      <div class="modal-body" id="resultModalBody"></div>
+      <div class="modal-actions">
+        <button class="modal-primary" id="resultModalOk">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('skyCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const latInput = document.getElementById('latInput');
+    const lonInput = document.getElementById('lonInput');
+    const timeInput = document.getElementById('timeInput');
+    const nowBtn = document.getElementById('nowBtn');
+    const geoBtn = document.getElementById('geoBtn');
+    const sensorBtn = document.getElementById('sensorBtn');
+    const manualBtn = document.getElementById('manualBtn');
+    const sensorDot = document.getElementById('sensorDot');
+    const sensorStatus = document.getElementById('sensorStatus');
+    const observePrompt = document.getElementById('observePrompt');
+    const visibilityBtns = Array.from(document.querySelectorAll('.visibilityBtn'));
+    const playBtn = document.getElementById('playBtn');
+    const speedBtns = Array.from(document.querySelectorAll('.speedBtn'));
+    const seasonButtons = document.getElementById('seasonButtons');
+    const objectName = document.getElementById('objectName');
+    const objectDesc = document.getElementById('objectDesc');
+    const objectMeta = document.getElementById('objectMeta');
+    const visibleList = document.getElementById('visibleList');
+    const visibleCount = document.getElementById('visibleCount');
+    const lstText = document.getElementById('lstText');
+    const viewSummary = document.getElementById('viewSummary');
+    const toggleNearest = document.getElementById('toggleNearest');
+    const showAllBtn = document.getElementById('showAllBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const showConstellationBtn = document.getElementById('showConstellationBtn');
+    const showMilkyWayBtn = document.getElementById('showMilkyWayBtn');
+    const showSolarSystemBtn = document.getElementById('showSolarSystemBtn');
+    const showCrosshairBtn = document.getElementById('showCrosshairBtn');
+    const milkyWaySelect = document.getElementById('milkyWaySelect');
+    const skyGlowSelect = document.getElementById('skyGlowSelect');
+    const diagnosisBox = document.getElementById('diagnosisBox');
+    const observationSummary = document.getElementById('observationSummary');
+    const saveObservationBtn = document.getElementById('saveObservationBtn');
+    const estimateBortleBtn = document.getElementById('estimateBortleBtn');
+    const pendingObservationStatus = document.getElementById('pendingObservationStatus');
+    const surveyOptionBtns = Array.from(document.querySelectorAll('.survey-option'));
+    const resetObservationsBtn = document.getElementById('resetObservationsBtn');
+    const viewAzInput = document.getElementById('viewAzInput');
+    const viewAltInput = document.getElementById('viewAltInput');
+    const zoomInput = document.getElementById('zoomInput');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomResetBtn = document.getElementById('zoomResetBtn');
+    const viewAzText = document.getElementById('viewAzText');
+    const viewAltText = document.getElementById('viewAltText');
+    const zoomText = document.getElementById('zoomText');
+    const viewPresets = Array.from(document.querySelectorAll('.viewPreset'));
+    const resetViewBtn = document.getElementById('resetViewBtn');
+
+    let autoNearest = true;
+    let selectedObject = null;
+    let activeSeason = 'all';
+    let isPlaying = false;
+    let timeSpeed = 60;
+    let showConstellations = true;
+    let showMilkyWay = true;
+    let showSolarSystem = true;
+    let showCrosshair = true;
+    let renderedViewAz = 180;
+    let renderedViewAlt = 45;
+    let targetViewAz = 180;
+    let targetViewAlt = 45;
+    let simDate = new Date();
+    let lastFrame = performance.now();
+    let currentProjected = [];
+    let clickCandidate = null;
+    let dragging = false;
+    let dragMoved = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragStartAz = 180;
+    let dragStartAlt = 45;
+    let sensorMode = false;
+    let currentCandidate = null;
+    let observationRecords = [];
+    let bestObservedMag = null;
+    let brightestMissedMag = null;
+    let lastSensorEventTime = 0;
+    let sensorWatchdogTimer = null;
+    let sensorEventCount = 0;
+    let sensorLastAz = null;
+    let sensorLastAlt = null;
+    let motionFallbackHeading = 180;
+    let lastMotionTimestamp = 0;
+    let lastOrientationEventDebug = '';
+    let absoluteSensor = null;
+    let relativeSensor = null;
+    let sensorStartAttempted = false;
+    let activePointers = new Map();
+    let pinchStartDistance = 0;
+    let pinchStartZoom = 1;
+    let pinching = false;
+
+    const seasons = [
+      { key: 'spring', label: '봄' },
+      { key: 'summer', label: '여름' },
+      { key: 'autumn', label: '가을' },
+      { key: 'winter', label: '겨울' },
+      { key: 'all', label: '전체' },
+    ];
+
+    const representativeObjects = [
+      { id:'regulus', name:'레굴루스', season:'spring', ra:10.139, dec:11.97, mag:1.35, type:'별', hint:'봄철 사자자리의 대표 별', note:'봄철 사자자리의 중심이 되는 밝은 별입니다.' },
+      { id:'spica', name:'스피카', season:'spring', ra:13.420, dec:-11.16, mag:0.98, type:'별', hint:'처녀자리의 밝은 별', note:'봄철 남쪽 하늘에서 눈에 띄는 푸른빛 별입니다.' },
+      { id:'arcturus', name:'아크투루스', season:'spring', ra:14.261, dec:19.18, mag:-0.05, type:'별', hint:'목동자리의 주황빛 별', note:'봄철 곡선을 따라 찾기 쉬운 주황색 별입니다.' },
+      { id:'vega', name:'직녀성(베가)', season:'summer', ra:18.615, dec:38.78, mag:0.03, type:'별', hint:'여름철 삼각형의 한 꼭짓점', note:'여름 밤하늘의 대표적인 청백색 별입니다.' },
+      { id:'altair', name:'견우성(알타이르)', season:'summer', ra:19.846, dec:8.87, mag:0.77, type:'별', hint:'독수리자리의 대표 별', note:'직녀성과 함께 칠석 이야기로 잘 알려져 있습니다.' },
+      { id:'deneb', name:'데네브', season:'summer', ra:20.691, dec:45.28, mag:1.25, type:'별', hint:'백조자리의 꼬리별', note:'여름철 삼각형을 이루는 대표 별입니다.' },
+      { id:'antares', name:'안타레스', season:'summer', ra:16.490, dec:-26.43, mag:1.06, type:'별', hint:'전갈자리의 붉은 별', note:'붉은색이 잘 드러나는 여름철 대표 별입니다.' },
+      { id:'pegasus', name:'페가수스 사각형', season:'autumn', ra:23.000, dec:20.0, mag:2.4, type:'성군 패턴', hint:'가을철 별자리 찾기의 기준 패턴', note:'가을 하늘에서 큰 사각형 모양으로 찾는 기준 패턴입니다.' },
+      { id:'andromeda', name:'안드로메다 은하', season:'autumn', ra:0.712, dec:41.27, mag:3.4, type:'은하', hint:'가을철 대표 심원천체', note:'어두운 하늘에서는 맨눈으로도 희미하게 보일 수 있습니다.' },
+      { id:'fomalhaut', name:'포말하우트', season:'autumn', ra:22.961, dec:-29.62, mag:1.16, type:'별', hint:'남쪽 아래쪽에 외롭게 보이는 밝은 별', note:'가을철 남쪽 낮은 하늘의 고립된 밝은 별입니다.' },
+      { id:'betelgeuse', name:'베텔게우스', season:'winter', ra:5.919, dec:7.41, mag:0.5, type:'별', hint:'오리온자리의 붉은 어깨별', note:'겨울철 오리온자리를 대표하는 붉은 초거성입니다.' },
+      { id:'rigel', name:'리겔', season:'winter', ra:5.243, dec:-8.20, mag:0.13, type:'별', hint:'오리온자리의 푸른 발별', note:'오리온자리 아래쪽의 푸른빛 밝은 별입니다.' },
+      { id:'sirius', name:'시리우스', season:'winter', ra:6.752, dec:-16.72, mag:-1.46, type:'별', hint:'밤하늘에서 가장 밝은 항성', note:'겨울철 남동쪽 하늘에서 매우 강하게 빛나는 별입니다.' },
+      { id:'capella', name:'카펠라', season:'winter', ra:5.279, dec:45.99, mag:0.08, type:'별', hint:'마차부자리의 밝은 별', note:'겨울철 높은 하늘에서 쉽게 찾을 수 있습니다.' },
+      { id:'polaris', name:'북극성', season:'all', ra:2.530, dec:89.26, mag:1.98, type:'별', hint:'북쪽 기준 별', note:'북쪽 하늘에서 방위 확인에 도움을 주는 별입니다.' },
+      { id:'aldebaran', name:'알데바란', season:'winter', ra:4.598, dec:16.51, mag:0.85, type:'별', hint:'황소자리의 주황빛 별', note:'겨울철 황소자리에서 눈에 띄는 밝은 별입니다.' },
+      { id:'procyon', name:'프로키온', season:'winter', ra:7.655, dec:5.23, mag:0.38, type:'별', hint:'작은개자리의 밝은 별', note:'겨울철 대삼각형을 이루는 밝은 별입니다.' },
+      { id:'pollux', name:'폴룩스', season:'winter', ra:7.755, dec:28.03, mag:1.14, type:'별', hint:'쌍둥이자리의 밝은 별', note:'카스토르와 함께 쌍둥이자리를 찾는 기준이 됩니다.' },
+      { id:'castor', name:'카스토르', season:'winter', ra:7.577, dec:31.89, mag:1.58, type:'별', hint:'쌍둥이자리의 밝은 별', note:'폴룩스 근처에서 함께 보이는 별입니다.' },
+      { id:'canopus', name:'카노푸스', season:'winter', ra:6.400, dec:-52.70, mag:-0.74, type:'별', hint:'남쪽 매우 낮은 하늘의 밝은 별', note:'한국에서는 남쪽 지평선 가까이에서만 관측될 수 있습니다.' },
+      { id:'dubhe', name:'두베', season:'spring', ra:11.062, dec:61.75, mag:1.79, type:'별', hint:'북두칠성의 별', note:'북극성을 찾는 데 쓰이는 북두칠성의 대표 별입니다.' },
+      { id:'merak', name:'메라크', season:'spring', ra:11.030, dec:56.38, mag:2.37, type:'별', hint:'북두칠성의 별', note:'두베와 함께 북극성 방향을 가리키는 별입니다.' },
+      { id:'alphecca', name:'알페카', season:'summer', ra:15.579, dec:26.71, mag:2.22, type:'별', hint:'북쪽왕관자리의 밝은 별', note:'여름철 북쪽왕관자리의 보석처럼 보이는 별입니다.' },
+      { id:'rasalhague', name:'라살하게', season:'summer', ra:17.582, dec:12.56, mag:2.08, type:'별', hint:'뱀주인자리의 밝은 별', note:'여름철 남쪽 하늘에서 볼 수 있는 뱀주인자리의 별입니다.' },
+      { id:'scheat', name:'쉐아트', season:'autumn', ra:23.063, dec:28.08, mag:2.42, type:'별', hint:'페가수스 사각형의 별', note:'가을철 페가수스 사각형을 이루는 별 중 하나입니다.' },
+      { id:'alpheratz', name:'알페라츠', season:'autumn', ra:0.139, dec:29.09, mag:2.07, type:'별', hint:'페가수스 사각형의 별', note:'안드로메다자리와 연결되는 가을철 기준 별입니다.' },
+      { id:'mirfak', name:'미르파크', season:'autumn', ra:3.405, dec:49.86, mag:1.79, type:'별', hint:'페르세우스자리의 밝은 별', note:'가을과 겨울 사이 북동쪽 하늘에서 찾기 쉽습니다.' },
+      { id:'achernar', name:'아케르나르', season:'autumn', ra:1.628, dec:-57.24, mag:0.46, type:'별', hint:'에리다누스자리의 밝은 별', note:'한국에서는 매우 낮거나 관측이 어렵습니다.' },
+    ];
+
+    
+    // GitHub Pages에서도 안정적으로 작동하도록 밝은 별 카탈로그를 로컬 JSON 형태로 내장합니다.
+    // ra: 적경(시), dec: 적위(도), mag: 겉보기등급. 정밀 천문 측량용이 아니라 대중 관측 보조용 근사 데이터입니다.
+    const brightStarCatalogJson = [
+      {"id":"sirius","name":"시리우스","ra":6.752,"dec":-16.72,"mag":-1.46},
+      {"id":"canopus","name":"카노푸스","ra":6.400,"dec":-52.70,"mag":-0.74},
+      {"id":"arcturus","name":"아크투루스","ra":14.261,"dec":19.18,"mag":-0.05},
+      {"id":"vega","name":"베가","ra":18.615,"dec":38.78,"mag":0.03},
+      {"id":"capella","name":"카펠라","ra":5.279,"dec":45.99,"mag":0.08},
+      {"id":"rigel","name":"리겔","ra":5.243,"dec":-8.20,"mag":0.13},
+      {"id":"procyon","name":"프로키온","ra":7.655,"dec":5.23,"mag":0.38},
+      {"id":"achernar","name":"아케르나르","ra":1.628,"dec":-57.24,"mag":0.46},
+      {"id":"betelgeuse","name":"베텔게우스","ra":5.919,"dec":7.41,"mag":0.50},
+      {"id":"hadar","name":"하다르","ra":14.064,"dec":-60.37,"mag":0.61},
+      {"id":"altair","name":"알타이르","ra":19.846,"dec":8.87,"mag":0.77},
+      {"id":"acrux","name":"아크룩스","ra":12.443,"dec":-63.10,"mag":0.77},
+      {"id":"aldebaran","name":"알데바란","ra":4.598,"dec":16.51,"mag":0.85},
+      {"id":"spica","name":"스피카","ra":13.420,"dec":-11.16,"mag":0.98},
+      {"id":"antares","name":"안타레스","ra":16.490,"dec":-26.43,"mag":1.06},
+      {"id":"pollux","name":"폴룩스","ra":7.755,"dec":28.03,"mag":1.14},
+      {"id":"fomalhaut","name":"포말하우트","ra":22.961,"dec":-29.62,"mag":1.16},
+      {"id":"deneb","name":"데네브","ra":20.691,"dec":45.28,"mag":1.25},
+      {"id":"regulus","name":"레굴루스","ra":10.139,"dec":11.97,"mag":1.35},
+      {"id":"adhara","name":"아다라","ra":6.977,"dec":-28.97,"mag":1.50},
+      {"id":"castor","name":"카스토르","ra":7.577,"dec":31.89,"mag":1.58},
+      {"id":"shaula","name":"샤울라","ra":17.560,"dec":-37.10,"mag":1.62},
+      {"id":"gacrux","name":"가크룩스","ra":12.519,"dec":-57.11,"mag":1.63},
+      {"id":"bellatrix","name":"벨라트릭스","ra":5.418,"dec":6.35,"mag":1.64},
+      {"id":"elnath","name":"엘나스","ra":5.438,"dec":28.61,"mag":1.65},
+      {"id":"miaplacidus","name":"미아플라시두스","ra":9.220,"dec":-69.72,"mag":1.67},
+      {"id":"alnilam","name":"알닐람","ra":5.604,"dec":-1.20,"mag":1.69},
+      {"id":"alnair","name":"알나이르","ra":22.138,"dec":-46.96,"mag":1.74},
+      {"id":"alnitak","name":"알니탁","ra":5.679,"dec":-1.94,"mag":1.77},
+      {"id":"alioth","name":"알리오스","ra":12.900,"dec":55.96,"mag":1.77},
+      {"id":"mirfak","name":"미르파크","ra":3.405,"dec":49.86,"mag":1.79},
+      {"id":"dubhe","name":"두베","ra":11.062,"dec":61.75,"mag":1.79},
+      {"id":"wezen","name":"웨젠","ra":7.140,"dec":-26.39,"mag":1.83},
+      {"id":"kaus_australis","name":"카우스 오스트랄리스","ra":18.402,"dec":-34.38,"mag":1.85},
+      {"id":"alkaid","name":"알카이드","ra":13.792,"dec":49.31,"mag":1.86},
+      {"id":"sargas","name":"사르가스","ra":17.622,"dec":-42.99,"mag":1.86},
+      {"id":"menkalinan","name":"멘칼리난","ra":5.992,"dec":44.95,"mag":1.90},
+      {"id":"atria","name":"아트리아","ra":16.811,"dec":-69.03,"mag":1.91},
+      {"id":"alhena","name":"알헤나","ra":6.628,"dec":16.40,"mag":1.93},
+      {"id":"peacock","name":"피콕","ra":20.428,"dec":-56.74,"mag":1.94},
+      {"id":"polaris","name":"북극성","ra":2.530,"dec":89.26,"mag":1.98},
+      {"id":"mirzam","name":"미르잠","ra":6.378,"dec":-17.96,"mag":1.98},
+      {"id":"alphard","name":"알파드","ra":9.460,"dec":-8.66,"mag":1.99},
+      {"id":"hamal","name":"하말","ra":2.119,"dec":23.46,"mag":2.00},
+      {"id":"diphda","name":"디프다","ra":0.727,"dec":-17.99,"mag":2.04},
+      {"id":"nunki","name":"눈키","ra":18.921,"dec":-26.30,"mag":2.05},
+      {"id":"alpheratz","name":"알페라츠","ra":0.139,"dec":29.09,"mag":2.07},
+      {"id":"rasalhague","name":"라살하게","ra":17.582,"dec":12.56,"mag":2.08},
+      {"id":"kochab","name":"코카브","ra":14.845,"dec":74.16,"mag":2.08},
+      {"id":"mirach","name":"미라크","ra":1.162,"dec":35.62,"mag":2.07},
+      {"id":"algol","name":"알골","ra":3.137,"dec":40.96,"mag":2.12},
+      {"id":"almach","name":"알마크","ra":2.065,"dec":42.33,"mag":2.10},
+      {"id":"alphecca","name":"알페카","ra":15.579,"dec":26.71,"mag":2.22},
+      {"id":"saiph","name":"사이프","ra":5.796,"dec":-9.67,"mag":2.06},
+      {"id":"mintaka","name":"민타카","ra":5.533,"dec":-0.30,"mag":2.23},
+      {"id":"merak","name":"메라크","ra":11.030,"dec":56.38,"mag":2.37},
+      {"id":"phecda","name":"페크다","ra":11.897,"dec":53.69,"mag":2.44},
+      {"id":"megrez","name":"메그레즈","ra":12.257,"dec":57.03,"mag":3.31},
+      {"id":"mizar","name":"미자르","ra":13.399,"dec":54.93,"mag":2.23},
+      {"id":"scheat","name":"쉐아트","ra":23.063,"dec":28.08,"mag":2.42},
+      {"id":"markab","name":"마르카브","ra":23.079,"dec":15.21,"mag":2.49},
+      {"id":"algenib","name":"알게니브","ra":0.220,"dec":15.18,"mag":2.83},
+      {"id":"caph","name":"카프","ra":0.153,"dec":59.15,"mag":2.28},
+      {"id":"schedar","name":"셰다르","ra":0.675,"dec":56.54,"mag":2.24},
+      {"id":"ruchbah","name":"루크바","ra":1.430,"dec":60.24,"mag":2.66},
+      {"id":"segin","name":"세긴","ra":1.906,"dec":63.67,"mag":3.38},
+      {"id":"navi","name":"나비","ra":0.945,"dec":60.72,"mag":2.47}
+    ];
+
+    const constellationLines = [
+      { name:'오리온자리', pairs:[['betelgeuse','bellatrix'],['betelgeuse','alnitak'],['bellatrix','mintaka'],['alnitak','alnilam'],['alnilam','mintaka'],['alnitak','saiph'],['mintaka','rigel'],['saiph','rigel']] },
+      { name:'겨울 대삼각형', pairs:[['sirius','procyon'],['procyon','betelgeuse'],['betelgeuse','sirius']] },
+      { name:'여름 대삼각형', pairs:[['vega','deneb'],['deneb','altair'],['altair','vega']] },
+      { name:'북두칠성', pairs:[['dubhe','merak'],['merak','phecda'],['phecda','megrez'],['megrez','alioth'],['alioth','mizar'],['mizar','alkaid']] },
+      { name:'페가수스 사각형', pairs:[['alpheratz','scheat'],['scheat','markab'],['markab','algenib'],['algenib','alpheratz']] },
+      { name:'카시오페이아자리', pairs:[['caph','schedar'],['schedar','navi'],['navi','ruchbah'],['ruchbah','segin']] },
+      { name:'안드로메다자리', pairs:[['alpheratz','mirach'],['mirach','almach']] },
+      { name:'쌍둥이자리', pairs:[['castor','pollux'],['pollux','alhena']] }
+    ];
+
+    const milkyWayPath = [
+      {ra:17.75, dec:-29}, {ra:18.40, dec:-20}, {ra:19.80, dec:8}, {ra:20.70, dec:38},
+      {ra:22.00, dec:55}, {ra:0.70, dec:61}, {ra:3.00, dec:57}, {ra:5.60, dec:28},
+      {ra:6.75, dec:-16}, {ra:8.20, dec:-45}, {ra:10.80, dec:-60}, {ra:13.20, dec:-62},
+      {ra:15.50, dec:-50}, {ra:16.50, dec:-35}, {ra:17.75, dec:-29}
+    ];
+
+    const brightStarMap = new Map(brightStarCatalogJson.map(star => [star.id, star]));
+    const backgroundStars = brightStarCatalogJson.map((star, i) => ({ ...star, twinkle: (i * 1.61803398875) % (Math.PI * 2) }));
+
+    function setTimeInputFromDate(date) {
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      timeInput.value = local.toISOString().slice(0, 16);
+    }
+
+    function seasonLabel(key) {
+      return ({ spring:'봄', summer:'여름', autumn:'가을', winter:'겨울', all:'전체/상시' })[key] || '전체';
+    }
+
+    function directionLabel(az) {
+      const dirs = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+      return dirs[Math.round((((az % 360) + 360) % 360) / 45) % 8];
+    }
+
+    function getFilteredObjects() {
+      return activeSeason === 'all'
+        ? representativeObjects
+        : representativeObjects.filter(obj => obj.season === activeSeason || obj.season === 'all');
+    }
+
+    function createSeasonButtons() {
+      seasonButtons.innerHTML = '';
+      seasons.forEach(season => {
+        const btn = document.createElement('button');
+        btn.textContent = season.label;
+        if (season.key === activeSeason) btn.classList.add('active');
+        btn.addEventListener('click', () => {
+          activeSeason = season.key;
+          createSeasonButtons();
+          computeProjectedObjects();
+          draw();
+        });
+        seasonButtons.appendChild(btn);
+      });
+    }
+
+    function julianDate(date) {
+      return date.getTime() / 86400000 + 2440587.5;
+    }
+
+    function localSiderealHours(date, longitudeDeg) {
+      const jd = julianDate(date);
+      const d = jd - 2451545.0;
+      let gmst = 18.697374558 + 24.06570982441908 * d;
+      gmst = ((gmst % 24) + 24) % 24;
+      let lst = gmst + longitudeDeg / 15;
+      return ((lst % 24) + 24) % 24;
+    }
+
+    function equatorialToHorizontal(raHours, decDeg, lstHours, latDeg) {
+      const H = ((lstHours - raHours + 12) % 24 - 12) * 15 * Math.PI / 180;
+      const dec = decDeg * Math.PI / 180;
+      const lat = latDeg * Math.PI / 180;
+
+      const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(H);
+      const alt = Math.asin(sinAlt);
+
+      const y = -Math.sin(H) * Math.cos(dec);
+      const x = Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.sin(lat) * Math.cos(H);
+      let az = Math.atan2(y, x);
+      az = (az * 180 / Math.PI + 360) % 360;
+      return { altDeg: alt * 180 / Math.PI, azDeg: az };
+    }
+
+    function altAzToVector(azDeg, altDeg) {
+      const az = azDeg * Math.PI / 180;
+      const alt = altDeg * Math.PI / 180;
+      return {
+        x: Math.cos(alt) * Math.sin(az),
+        y: Math.cos(alt) * Math.cos(az),
+        z: Math.sin(alt),
+      };
+    }
+
+    function normalize(v) {
+      const n = Math.hypot(v.x, v.y, v.z) || 1;
+      return { x: v.x / n, y: v.y / n, z: v.z / n };
+    }
+
+    function cross(a, b) {
+      return {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x,
+      };
+    }
+
+    function dot(a, b) {
+      return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    function getSkyZoom() {
+      return Math.max(1, Math.min(4, Number(zoomInput.value) || 1));
+    }
+
+    function setSkyZoom(value) {
+      const next = Math.max(1, Math.min(4, Number(value) || 1));
+      zoomInput.value = next.toFixed(1);
+      updateViewTexts();
+      draw();
+    }
+
+    function setViewTarget(az, alt, updateInputs = true) {
+      if (Number.isFinite(az)) targetViewAz = normalizeDeg(az);
+      if (Number.isFinite(alt)) targetViewAlt = Math.max(0, Math.min(90, alt));
+      if (updateInputs) {
+        viewAzInput.value = String(Math.round(targetViewAz));
+        viewAltInput.value = String(Math.round(targetViewAlt));
+      }
+      updateViewTexts();
+    }
+
+    function updateRenderedView(dt) {
+      const ratio = 1 - Math.exp(-Math.max(0.001, dt) * 10);
+      renderedViewAz = smoothDeg(renderedViewAz, targetViewAz, ratio);
+      renderedViewAlt = smoothNumber(renderedViewAlt, targetViewAlt, ratio);
+    }
+
+    function cameraBasis() {
+      const viewAz = renderedViewAz;
+      const viewAlt = renderedViewAlt;
+      const forward = normalize(altAzToVector(viewAz, viewAlt));
+      const worldUp = Math.abs(forward.z) > 0.98 ? { x: 0, y: 1, z: 0 } : { x: 0, y: 0, z: 1 };
+      const right = normalize(cross(forward, worldUp));
+      const up = normalize(cross(right, forward));
+      return { forward, right, up };
+    }
+
+    function projectDirection(azDeg, altDeg) {
+      const v = altAzToVector(azDeg, altDeg);
+      const { forward, right, up } = cameraBasis();
+      const cx = dot(v, right);
+      const cy = dot(v, up);
+      const cz = dot(v, forward);
+      if (cz <= 0) return null;
+
+      const theta = Math.acos(Math.max(-1, Math.min(1, cz)));
+      const skyZoom = getSkyZoom();
+      const radius = canvas.width * 0.44;
+      const r = radius * skyZoom * (theta / (Math.PI / 2));
+      if (r > radius) return null;
+
+      const len = Math.hypot(cx, cy);
+      const nx = len > 1e-6 ? cx / len : 0;
+      const ny = len > 1e-6 ? cy / len : 0;
+      return {
+        x: canvas.width / 2 + nx * r,
+        y: canvas.height / 2 - ny * r,
+        radial: r,
+        edgeRadius: radius,
+        angularDistDeg: theta * 180 / Math.PI,
+      };
+    }
+
+    function screenToDirection(px, py) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = canvas.width * 0.44;
+      const dx = px - cx;
+      const dy = cy - py;
+      const r = Math.hypot(dx, dy);
+      if (r > radius) return null;
+
+      const theta = (r / radius) * (Math.PI / 2) / getSkyZoom();
+      const len = r || 1;
+      const nx = r > 1e-6 ? dx / len : 0;
+      const ny = r > 1e-6 ? dy / len : 0;
+      const { forward, right, up } = cameraBasis();
+      return normalize({
+        x: forward.x * Math.cos(theta) + (right.x * nx + up.x * ny) * Math.sin(theta),
+        y: forward.y * Math.cos(theta) + (right.y * nx + up.y * ny) * Math.sin(theta),
+        z: forward.z * Math.cos(theta) + (right.z * nx + up.z * ny) * Math.sin(theta),
+      });
+    }
+
+    function computeProjectedObjects() {
+      const lat = Number(latInput.value) || 0;
+      const lon = Number(lonInput.value) || 0;
+      const lst = localSiderealHours(simDate, lon);
+      lstText.textContent = `${lst.toFixed(2)} h`;
+      viewSummary.textContent = `${directionLabel(Number(viewAzInput.value))}쪽 / ${Number(viewAltInput.value)}° / 확대 ${getSkyZoom().toFixed(1)}×`;
+
+      currentProjected = getFilteredObjects().map(obj => {
+        const horiz = equatorialToHorizontal(obj.ra, obj.dec, lst, lat);
+        if (horiz.altDeg < 0) return { ...obj, ...horiz, visible: false };
+        const p = projectDirection(horiz.azDeg, horiz.altDeg);
+        return p ? { ...obj, ...horiz, ...p, visible: true } : { ...obj, ...horiz, visible: false };
+      }).filter(obj => obj.visible).sort((a, b) => a.mag - b.mag);
+
+      visibleCount.textContent = `${currentProjected.length}개`;
+      updateVisibleList();
+      updateObservationCandidate();
+      updateDiagnosis();
+    }
+
+    function updateVisibleList() {
+      visibleList.innerHTML = '';
+      if (!currentProjected.length) {
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        row.textContent = '현재 시점과 계절 조건에서 보이는 대표 천체가 없습니다.';
+        visibleList.appendChild(row);
+        return;
+      }
+      currentProjected.forEach(obj => {
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        row.innerHTML = `<span style="display:flex;align-items:center;gap:10px;"><span class="dot"></span>${obj.name}</span><span style="color:#bfd0ec;">${directionLabel(obj.azDeg)} / 고도 ${obj.altDeg.toFixed(0)}°</span>`;
+        row.addEventListener('click', () => selectObject(obj));
+        visibleList.appendChild(row);
+      });
+    }
+
+
+
+    function updateObservationCandidate() {
+      if (!currentProjected.length) {
+        currentCandidate = null;
+        observePrompt.textContent = '현재 시야에 추천할 대표 천체가 없습니다. 스마트폰을 다른 방향으로 돌리거나 계절 필터를 전체로 바꿔 보세요.';
+        return;
+      }
+
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const candidates = currentProjected
+        .map(obj => ({ ...obj, centerDist: Math.hypot(obj.x - centerX, obj.y - centerY) }))
+        .filter(obj => obj.altDeg > 3)
+        .sort((a, b) => {
+          const scoreA = a.centerDist + Math.max(0, a.mag - 1.2) * 34;
+          const scoreB = b.centerDist + Math.max(0, b.mag - 1.2) * 34;
+          return scoreA - scoreB;
+        });
+
+      currentCandidate = candidates[0] || currentProjected[0];
+      if (!currentCandidate) return;
+      observePrompt.innerHTML = `현재 조준 방향 추천: <strong>${currentCandidate.name}</strong><br>` +
+        `${directionLabel(currentCandidate.azDeg)}쪽 · 고도 ${currentCandidate.altDeg.toFixed(0)}° · 겉보기등급 ${currentCandidate.mag}<br>` +
+        `실제 하늘에서 이 천체가 보이는 정도를 선택하면 한계등급 기반 진단에 반영됩니다.`;
+    }
+    function selectObject(obj) {
+      selectedObject = obj;
+      objectName.textContent = obj.name;
+      objectDesc.textContent = obj.note;
+      objectMeta.innerHTML = `
+        <div><strong>계절</strong> · ${seasonLabel(obj.season)}</div>
+        <div><strong>종류</strong> · ${obj.type}</div>
+        <div><strong>설명</strong> · ${obj.hint}</div>
+        <div><strong>밝기(참고)</strong> · 겉보기등급 ${obj.mag}</div>
+        <div><strong>현재 위치</strong> · ${directionLabel(obj.azDeg)}쪽, 고도 ${obj.altDeg.toFixed(1)}°, 방위각 ${obj.azDeg.toFixed(1)}°</div>
+      `;
+      updateDiagnosis();
+      draw();
+    }
+
+    function clearSelection() {
+      selectedObject = null;
+      objectName.textContent = '아직 선택되지 않았습니다';
+      objectDesc.textContent = '천구를 누르거나 계절 버튼을 눌러 대표 천체를 고르세요. 현재 시야 밖의 천체는 자동으로 숨겨집니다.';
+      objectMeta.innerHTML = '';
+      updateDiagnosis();
+      draw();
+    }
+
+    function findNearestRepresentative(px, py) {
+      let best = null;
+      let bestD = Infinity;
+      for (const obj of currentProjected) {
+        const d = Math.hypot(px - obj.x, py - obj.y);
+        if (d < bestD) {
+          best = obj;
+          bestD = d;
+        }
+      }
+      return bestD <= 42 ? best : null;
+    }
+
+    function magnitudeRadius(mag) {
+      return Math.max(1.2, 5.2 - mag * 1.0);
+    }
+
+    function drawBackground() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = canvas.width * 0.44;
+
+      const bg = ctx.createRadialGradient(cx, cy, radius * 0.04, cx, cy, radius * 1.05);
+      bg.addColorStop(0, '#16325e');
+      bg.addColorStop(0.45, '#0a1731');
+      bg.addColorStop(1, '#030812');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.save();
+      ctx.clip();
+
+      const skyGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      skyGlow.addColorStop(0, 'rgba(34, 69, 122, 0.30)');
+      skyGlow.addColorStop(0.55, 'rgba(11, 25, 50, 0.16)');
+      skyGlow.addColorStop(1, 'rgba(4, 8, 18, 0.06)');
+      ctx.fillStyle = skyGlow;
+      ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+
+      drawGround(cx, cy, radius);
+      drawGrid(cx, cy, radius);
+      drawMilkyWayBand();
+      drawConstellationLines();
+      drawBackgroundStars(cx, cy, radius);
+      drawSolarSystemObjects();
+      drawRepresentativeObjects();
+      ctx.restore();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      drawCompass(cx, cy, radius);
+      if (showCrosshair) drawCrosshair(cx, cy, radius);
+    }
+
+    function drawGround(cx, cy, radius) {
+      const step = 5;
+      ctx.save();
+      ctx.fillStyle = 'rgba(28, 24, 22, 0.78)';
+      for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y += step) {
+        let segmentStart = null;
+        for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x += step) {
+          const dir = screenToDirection(x + step / 2, y + step / 2);
+          const isGround = dir && dir.z < 0;
+          if (isGround && segmentStart === null) segmentStart = x;
+          if ((!isGround || x >= cx + radius - step) && segmentStart !== null) {
+            const endX = isGround ? x + step : x;
+            ctx.fillRect(segmentStart, y, endX - segmentStart, step + 0.6);
+            segmentStart = null;
+          }
+        }
+      }
+
+      const groundGlow = ctx.createLinearGradient(cx, cy + radius * 0.15, cx, cy + radius);
+      groundGlow.addColorStop(0, 'rgba(255,209,102,0.03)');
+      groundGlow.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = groundGlow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255, 209, 102, 0.78)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      let started = false;
+      for (let az = 0; az <= 360; az += 1) {
+        const p = projectDirection(az, 0);
+        if (!p) { started = false; continue; }
+        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255, 230, 170, 0.92)';
+      ctx.font = '700 13px sans-serif';
+      const label = projectDirection(Number(viewAzInput.value), 0);
+      if (label) ctx.fillText('지평선 0°', label.x + 10, label.y - 8);
+      ctx.restore();
+    }
+
+    function drawGrid(cx, cy, radius) {
+      [30, 60].forEach(thetaDeg => {
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * (thetaDeg / 90), 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      const azimuths = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+      azimuths.forEach(az => {
+        const isMajor = az % 90 === 0;
+        ctx.strokeStyle = isMajor ? 'rgba(139,184,255,0.22)' : 'rgba(255,255,255,0.10)';
+        ctx.lineWidth = isMajor ? 1.35 : 0.9;
+        ctx.beginPath();
+
+        let started = false;
+        for (let alt = 0; alt <= 90; alt += 2) {
+          const p = projectDirection(az, alt);
+          if (!p) continue;
+          if (!started) {
+            ctx.moveTo(p.x, p.y);
+            started = true;
+          } else {
+            ctx.lineTo(p.x, p.y);
+          }
+        }
+
+        if (started) ctx.stroke();
+
+        const labelPoint = projectDirection(az, 8);
+        if (labelPoint) {
+          ctx.fillStyle = isMajor ? 'rgba(210,228,255,0.82)' : 'rgba(255,255,255,0.50)';
+          ctx.font = isMajor ? '600 13px sans-serif' : '12px sans-serif';
+          ctx.fillText(`${az}°`, labelPoint.x + 6, labelPoint.y - 4);
+        }
+      });
+    }
+
+
+    function projectRaDec(raHours, decDeg) {
+      const lat = Number(latInput.value) || 0;
+      const lon = Number(lonInput.value) || 0;
+      const lst = localSiderealHours(simDate, lon);
+      const horiz = equatorialToHorizontal(raHours, decDeg, lst, lat);
+      if (horiz.altDeg < 0) return null;
+      const p = projectDirection(horiz.azDeg, horiz.altDeg);
+      return p ? { ...p, ...horiz } : null;
+    }
+
+    function buildMilkyWayProjectedPath() {
+      const dense = [];
+      for (let i = 0; i < milkyWayPath.length - 1; i += 1) {
+        const a = milkyWayPath[i];
+        const b = milkyWayPath[i + 1];
+        let dra = b.ra - a.ra;
+        if (dra > 12) dra -= 24;
+        if (dra < -12) dra += 24;
+        const steps = 8;
+        for (let j = 0; j < steps; j += 1) {
+          const t = j / steps;
+          dense.push({
+            ra: ((a.ra + dra * t) % 24 + 24) % 24,
+            dec: a.dec + (b.dec - a.dec) * t,
+          });
+        }
+      }
+      dense.push(milkyWayPath[milkyWayPath.length - 1]);
+      return dense.map(pt => projectRaDec(pt.ra, pt.dec));
+    }
+
+    function strokeMilkyWaySegments(pts, width, color, shadow = 0) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      if (shadow) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = shadow;
+      }
+      ctx.beginPath();
+      let started = false;
+      let prev = null;
+      for (const p of pts) {
+        if (!p || (prev && Math.hypot(p.x - prev.x, p.y - prev.y) > canvas.width * 0.42)) {
+          started = false;
+          prev = null;
+          continue;
+        }
+        if (!started) {
+          ctx.moveTo(p.x, p.y);
+          started = true;
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+        prev = p;
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawMilkyWayBand() {
+      if (!showMilkyWay) return;
+      const pts = buildMilkyWayProjectedPath();
+      const visiblePts = pts.filter(Boolean);
+      if (visiblePts.length < 2) return;
+      const zoomBoost = Math.min(1.35, 0.9 + getSkyZoom() * 0.12);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      strokeMilkyWaySegments(pts, 92 * zoomBoost, 'rgba(72, 96, 170, 0.075)', 18);
+      strokeMilkyWaySegments(pts, 58 * zoomBoost, 'rgba(142, 164, 230, 0.105)', 12);
+      strokeMilkyWaySegments(pts, 30 * zoomBoost, 'rgba(232, 238, 255, 0.13)', 8);
+      strokeMilkyWaySegments(pts, 12 * zoomBoost, 'rgba(255, 248, 222, 0.10)', 4);
+      ctx.restore();
+
+      // 어두운 먼지대 느낌: 중심부를 살짝 끊어 은하수가 단순한 한 줄처럼 보이지 않게 합니다.
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      strokeMilkyWaySegments(pts, 8 * zoomBoost, 'rgba(5, 9, 20, 0.20)', 0);
+      ctx.restore();
+
+      // 밝은 구름 덩어리. 화면 회전 중에도 랜덤값을 쓰지 않도록 결정론적으로 배치합니다.
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      visiblePts.forEach((p, i) => {
+        if (i % 7 !== 0) return;
+        const pulse = 0.75 + 0.25 * Math.sin(i * 1.73);
+        const r = (10 + (i % 5) * 3) * zoomBoost;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 2.2);
+        g.addColorStop(0, `rgba(255,255,240,${0.045 * pulse})`);
+        g.addColorStop(0.45, `rgba(170,190,255,${0.035 * pulse})`);
+        g.addColorStop(1, 'rgba(120,150,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    function drawConstellationLines() {
+      if (!showConstellations) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(139,184,255,0.24)';
+      ctx.lineWidth = 1.1;
+      constellationLines.forEach(group => {
+        group.pairs.forEach(([aId, bId]) => {
+          const a = brightStarMap.get(aId);
+          const b = brightStarMap.get(bId);
+          if (!a || !b) return;
+          const pa = projectRaDec(a.ra, a.dec);
+          const pb = projectRaDec(b.ra, b.dec);
+          if (!pa || !pb) return;
+          if (Math.hypot(pa.x - pb.x, pa.y - pb.y) > canvas.width * 0.55) return;
+          ctx.beginPath();
+          ctx.moveTo(pa.x, pa.y);
+          ctx.lineTo(pb.x, pb.y);
+          ctx.stroke();
+        });
+      });
+      ctx.restore();
+    }
+
+    function degToRad(deg) { return deg * Math.PI / 180; }
+    function radToDeg(rad) { return rad * 180 / Math.PI; }
+    function normDeg(deg) { return ((deg % 360) + 360) % 360; }
+
+    function eclipticToRaDec(lonDeg, latDeg, date) {
+      const d = julianDate(date) - 2451545.0;
+      const eps = degToRad(23.4393 - 3.563e-7 * d);
+      const lon = degToRad(lonDeg);
+      const lat = degToRad(latDeg);
+      const x = Math.cos(lon) * Math.cos(lat);
+      const y = Math.sin(lon) * Math.cos(lat);
+      const z = Math.sin(lat);
+      const yeq = y * Math.cos(eps) - z * Math.sin(eps);
+      const zeq = y * Math.sin(eps) + z * Math.cos(eps);
+      return {
+        ra: normDeg(radToDeg(Math.atan2(yeq, x))) / 15,
+        dec: radToDeg(Math.atan2(zeq, Math.hypot(x, yeq)))
+      };
+    }
+
+    function moonRaDec(date) {
+      const d = julianDate(date) - 2451545.0;
+      const L = normDeg(218.316 + 13.176396 * d);
+      const M = normDeg(134.963 + 13.064993 * d);
+      const F = normDeg(93.272 + 13.229350 * d);
+      const lon = L + 6.289 * Math.sin(degToRad(M));
+      const lat = 5.128 * Math.sin(degToRad(F));
+      return eclipticToRaDec(lon, lat, date);
+    }
+
+    const orbitalElements = {
+      mercury:{ label:'수성', N:48.3313,Nd:3.24587e-5,i:7.0047,id:5.00e-8,w:29.1241,wd:1.01444e-5,a:0.387098,e:0.205635,ed:5.59e-10,M:168.6562,Md:4.0923344368, mag:-0.4 },
+      venus:{ label:'금성', N:76.6799,Nd:2.46590e-5,i:3.3946,id:2.75e-8,w:54.8910,wd:1.38374e-5,a:0.723330,e:0.006773,ed:-1.302e-9,M:48.0052,Md:1.6021302244, mag:-4.0 },
+      earth:{ label:'지구', N:0,Nd:0,i:0,id:0,w:282.9404,wd:4.70935e-5,a:1.000000,e:0.016709,ed:-1.151e-9,M:356.0470,Md:0.9856002585, mag:0 },
+      mars:{ label:'화성', N:49.5574,Nd:2.11081e-5,i:1.8497,id:-1.78e-8,w:286.5016,wd:2.92961e-5,a:1.523688,e:0.093405,ed:2.516e-9,M:18.6021,Md:0.5240207766, mag:0.5 },
+      jupiter:{ label:'목성', N:100.4542,Nd:2.76854e-5,i:1.3030,id:-1.557e-7,w:273.8777,wd:1.64505e-5,a:5.20256,e:0.048498,ed:4.469e-9,M:19.8950,Md:0.0830853001, mag:-2.2 },
+      saturn:{ label:'토성', N:113.6634,Nd:2.38980e-5,i:2.4886,id:-1.081e-7,w:339.3939,wd:2.97661e-5,a:9.55475,e:0.055546,ed:-9.499e-9,M:316.9670,Md:0.0334442282, mag:0.7 }
+    };
+
+    function heliocentricPosition(key, date) {
+      const d = julianDate(date) - 2451545.0;
+      const el = orbitalElements[key];
+      const N = degToRad(normDeg(el.N + el.Nd * d));
+      const i = degToRad(el.i + el.id * d);
+      const w = degToRad(normDeg(el.w + el.wd * d));
+      const a = el.a;
+      const e = el.e + el.ed * d;
+      const M = degToRad(normDeg(el.M + el.Md * d));
+      let E = M + e * Math.sin(M) * (1 + e * Math.cos(M));
+      for (let k = 0; k < 3; k += 1) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+      const xv = a * (Math.cos(E) - e);
+      const yv = a * Math.sqrt(1 - e * e) * Math.sin(E);
+      const v = Math.atan2(yv, xv);
+      const r = Math.hypot(xv, yv);
+      return {
+        x: r * (Math.cos(N) * Math.cos(v + w) - Math.sin(N) * Math.sin(v + w) * Math.cos(i)),
+        y: r * (Math.sin(N) * Math.cos(v + w) + Math.cos(N) * Math.sin(v + w) * Math.cos(i)),
+        z: r * (Math.sin(v + w) * Math.sin(i))
+      };
+    }
+
+    function vectorToRaDecEcliptic(v, date) {
+      const d = julianDate(date) - 2451545.0;
+      const eps = degToRad(23.4393 - 3.563e-7 * d);
+      const x = v.x;
+      const y = v.y * Math.cos(eps) - v.z * Math.sin(eps);
+      const z = v.y * Math.sin(eps) + v.z * Math.cos(eps);
+      return { ra: normDeg(radToDeg(Math.atan2(y, x))) / 15, dec: radToDeg(Math.atan2(z, Math.hypot(x, y))) };
+    }
+
+    function solarSystemPositions(date) {
+      // The simplified 'earth' element used here follows the common Schlyter-style
+      // formula and returns the Sun's apparent geocentric ecliptic vector, not the
+      // Earth's heliocentric vector. Using the negative vector would place the Sun
+      // on the opposite side of the sky, which made it appear at night.
+      const sunVector = heliocentricPosition('earth', date);
+      const sun = vectorToRaDecEcliptic(sunVector, date);
+      const moon = moonRaDec(date);
+      const bodies = [
+        { id:'sun', name:'태양', ra:sun.ra, dec:sun.dec, mag:-26.7, icon:'☉' },
+        { id:'moon', name:'달', ra:moon.ra, dec:moon.dec, mag:-12.0, icon:'☾' }
+      ];
+      ['mercury','venus','mars','jupiter','saturn'].forEach(key => {
+        const p = heliocentricPosition(key, date);
+        const geo = { x:p.x + sunVector.x, y:p.y + sunVector.y, z:p.z + sunVector.z };
+        const eq = vectorToRaDecEcliptic(geo, date);
+        bodies.push({ id:key, name:orbitalElements[key].label, ra:eq.ra, dec:eq.dec, mag:orbitalElements[key].mag, icon:'●' });
+      });
+      return bodies;
+    }
+
+    function drawSolarSystemObjects() {
+      if (!showSolarSystem) return;
+      const bodies = solarSystemPositions(simDate);
+      bodies.forEach(body => {
+        const p = projectRaDec(body.ra, body.dec);
+        if (!p) return;
+        const isSun = body.id === 'sun';
+        const isMoon = body.id === 'moon';
+        const r = isSun ? 8 : isMoon ? 7 : Math.max(4, 7 - body.mag * 0.7);
+        ctx.save();
+        ctx.beginPath();
+        ctx.fillStyle = isSun ? 'rgba(255,209,102,0.92)' : isMoon ? 'rgba(235,240,255,0.92)' : 'rgba(255,186,114,0.92)';
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.font = '700 13px sans-serif';
+        ctx.fillText(body.name, p.x + 10, p.y - 7);
+        ctx.restore();
+      });
+    }
+
+    function drawBackgroundStars(cx, cy, radius) {
+      const lat = Number(latInput.value) || 0;
+      const lon = Number(lonInput.value) || 0;
+      const lst = localSiderealHours(simDate, lon);
+      const t = performance.now() * 0.002;
+
+      backgroundStars.forEach(star => {
+        const horiz = equatorialToHorizontal(star.ra, star.dec, lst, lat);
+        if (horiz.altDeg < 0) return;
+        const p = projectDirection(horiz.azDeg, horiz.altDeg);
+        if (!p) return;
+        const tw = 0.75 + 0.25 * Math.sin(t + star.twinkle);
+        const r = Math.max(0.6, 2.2 - star.mag * 0.22) * tw;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0.18, 0.9 - star.mag * 0.12)})`;
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawRepresentativeObjects() {
+      currentProjected.forEach(obj => {
+        const isSelected = selectedObject && selectedObject.id === obj.id;
+        const isCandidate = clickCandidate && clickCandidate.id === obj.id;
+        const radius = magnitudeRadius(obj.mag) + (isSelected ? 2.6 : 0);
+
+        ctx.beginPath();
+        ctx.fillStyle = isSelected ? '#ffd166' : '#f7fbff';
+        ctx.arc(obj.x, obj.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSelected || isCandidate) {
+          ctx.beginPath();
+          ctx.strokeStyle = isSelected ? 'rgba(255,209,102,0.95)' : 'rgba(139,184,255,0.8)';
+          ctx.lineWidth = 1.6;
+          ctx.arc(obj.x, obj.y, radius + 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = 'rgba(233,242,255,0.90)';
+        ctx.font = isSelected ? '700 18px sans-serif' : '13px sans-serif';
+        ctx.fillText(obj.name, obj.x + 10, obj.y - 8);
+      });
+    }
+
+    function drawCompass(cx, cy, radius) {
+      const marks = [
+        { az: 0, label: '북', sub: '0°' },
+        { az: 45, label: '북동', sub: '45°' },
+        { az: 90, label: '동', sub: '90°' },
+        { az: 135, label: '남동', sub: '135°' },
+        { az: 180, label: '남', sub: '180°' },
+        { az: 225, label: '남서', sub: '225°' },
+        { az: 270, label: '서', sub: '270°' },
+        { az: 315, label: '북서', sub: '315°' },
+      ];
+      ctx.save();
+      marks.forEach(mark => {
+        const p = projectDirection(mark.az, 0);
+        if (!p) return;
+        const isCardinal = mark.az % 90 === 0;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = isCardinal ? 'rgba(255,255,255,0.94)' : 'rgba(210,228,255,0.78)';
+        ctx.font = isCardinal ? '800 18px sans-serif' : '700 13px sans-serif';
+        ctx.fillText(mark.label, p.x, p.y - 18);
+        ctx.fillStyle = 'rgba(190,205,230,0.72)';
+        ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.fillText(mark.sub, p.x, p.y - 2);
+      });
+
+      const currentAz = Number(viewAzInput.value);
+      const centerLabel = `${directionLabel(currentAz)} ${Math.round(currentAz)}° · 고도 ${Number(viewAltInput.value)}° · 확대 ${getSkyZoom().toFixed(1)}×`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      const w = Math.min(430, Math.max(240, centerLabel.length * 10));
+      ctx.beginPath();
+      ctx.roundRect(cx - w / 2, 18, w, 34, 17);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(238,245,255,0.92)';
+      ctx.font = '700 14px sans-serif';
+      ctx.fillText(centerLabel, cx, 27);
+      ctx.restore();
+    }
+
+    function drawCrosshair(cx, cy, radius) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(139,184,255,0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - 16, cy);
+      ctx.lineTo(cx + 16, cy);
+      ctx.moveTo(cx, cy - 16);
+      ctx.lineTo(cx, cy + 16);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(139,184,255,0.18)';
+      ctx.setLineDash([6, 7]);
+      [0.18, 0.34, 0.50].forEach(scale => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    function visibilityLabel(level) {
+      if (level === 2) return '뚜렷함';
+      if (level === 1) return '희미함';
+      return '안 보임';
+    }
+
+    function updateObservationStats() {
+      const seenRecords = observationRecords.filter(record => record.level > 0);
+      const missedRecords = observationRecords.filter(record => record.level === 0);
+      bestObservedMag = seenRecords.length
+        ? Math.max(...seenRecords.map(record => record.effectiveMag))
+        : null;
+      brightestMissedMag = missedRecords.length
+        ? Math.min(...missedRecords.map(record => record.mag))
+        : null;
+    }
+
+    function updateObservationSummary() {
+      if (!observationRecords.length) {
+        observationSummary.textContent = '아직 관측 기록이 없습니다. 현재 조준 방향의 추천 천체가 실제로 보이는지 먼저 선택해 주세요.';
+        return;
+      }
+
+      const recent = observationRecords.slice(-5).reverse();
+      const bestText = bestObservedMag !== null
+        ? `현재까지 확인된 맨눈 한계등급: 약 ${bestObservedMag.toFixed(1)}등급`
+        : '아직 보인다고 입력한 천체가 없습니다.';
+      const missedText = brightestMissedMag !== null
+        ? `가장 밝은 미관측 천체: ${brightestMissedMag.toFixed(1)}등급`
+        : '미관측으로 입력한 밝은 천체는 없습니다.';
+      observationSummary.innerHTML = `<strong>${bestText}</strong><br><span class="small">${missedText}</span>` +
+        recent.map(record => `
+          <div class="observation-entry">
+            <span>${record.name} · ${record.mag.toFixed(2)}등급</span>
+            <span>${visibilityLabel(record.level)}</span>
+          </div>
+        `).join('');
+    }
+
+    function estimateBortleFromObservations() {
+      const milky = Number(milkyWaySelect.value);
+      const glow = Number(skyGlowSelect.value);
+      let effectiveLimit = bestObservedMag;
+
+      if (effectiveLimit === null) {
+        return {
+          ready: false,
+          tone: 'warn',
+          title: '관측 기록이 필요합니다',
+          detail: '현재 방향의 추천 천체에 대해 “뚜렷하게 보임 / 희미하게 보임 / 안 보임” 중 하나를 선택해 주세요. 여러 방향에서 3개 이상 입력하면 결과가 더 안정적입니다.'
+        };
+      }
+
+      // 은하수와 하늘 배경은 한계등급을 직접 대체하지 않고 보조 보정값으로만 사용합니다.
+      effectiveLimit += [0, 0.45, 0.9][milky] || 0;
+      effectiveLimit += ({ 3: -0.55, 2: -0.15, 1: 0.25, 0: 0.55 })[glow] ?? 0;
+
+      // 매우 밝은 천체가 안 보였다는 기록은 광공해·구름·장애물 가능성을 강하게 반영합니다.
+      if (brightestMissedMag !== null) {
+        if (brightestMissedMag <= 0.5) effectiveLimit -= 1.2;
+        else if (brightestMissedMag <= 1.5) effectiveLimit -= 0.75;
+        else if (brightestMissedMag <= 2.5) effectiveLimit -= 0.35;
+      }
+
+      let bortle, tone, note;
+      if (effectiveLimit >= 5.8) { bortle = '보틀 1~2급'; tone = 'good'; note = '매우 어두운 하늘에 가까운 결과입니다.'; }
+      else if (effectiveLimit >= 4.8) { bortle = '보틀 3~4급'; tone = 'good'; note = '은하수와 어두운 별 관측이 가능한 비교적 좋은 하늘입니다.'; }
+      else if (effectiveLimit >= 3.8) { bortle = '보틀 4~5급'; tone = 'warn'; note = '교외 또는 약한 광공해 하늘에 가까운 결과입니다.'; }
+      else if (effectiveLimit >= 2.8) { bortle = '보틀 5~6급'; tone = 'warn'; note = '밝은 별 위주로 보이는 광공해가 있는 하늘입니다.'; }
+      else if (effectiveLimit >= 1.8) { bortle = '보틀 6~7급'; tone = 'bad'; note = '도심성 광공해가 꽤 큰 하늘로 추정됩니다.'; }
+      else { bortle = '보틀 8~9급'; tone = 'bad'; note = '매우 밝은 도심 하늘 또는 날씨·장애물 영향이 큰 상태로 추정됩니다.'; }
+
+      return { ready: true, bortle, tone, effectiveLimit, note };
+    }
+
+    function updateDiagnosis() {
+      updateObservationStats();
+      updateObservationSummary();
+      const result = estimateBortleFromObservations();
+
+      if (!result.ready) {
+        diagnosisBox.innerHTML = `<strong class="${result.tone}">${result.title}</strong><br>${result.detail}`;
+        return;
+      }
+
+      const observedCount = observationRecords.filter(record => record.level > 0).length;
+      const missedCount = observationRecords.filter(record => record.level === 0).length;
+      diagnosisBox.innerHTML = `<strong class="good">추정 준비 완료</strong><br>` +
+        `관측 기록 ${observationRecords.length}개가 입력되었습니다. 보인 기록 ${observedCount}개 · 안 보인 기록 ${missedCount}개입니다.<br>` +
+        `최종 보틀 등급은 아래의 “보틀 등급 추정하기” 버튼을 눌렀을 때 팝업으로 표시됩니다.`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    function openResultModal(title, bodyHtml) {
+      const modal = document.getElementById('resultModal');
+      const modalTitle = document.getElementById('resultModalTitle');
+      const modalBody = document.getElementById('resultModalBody');
+      if (!modal || !modalTitle || !modalBody) return;
+      modalTitle.textContent = title;
+      modalBody.innerHTML = bodyHtml;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => document.getElementById('resultModalOk')?.focus(), 0);
+    }
+
+    function closeResultModal() {
+      const modal = document.getElementById('resultModal');
+      if (!modal) return;
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
+
+    function showBortleEstimatePopup() {
+      updateObservationStats();
+      updateObservationSummary();
+      const result = estimateBortleFromObservations();
+
+      if (!result.ready) {
+        openResultModal('관측 기록이 필요합니다', `
+          <div class="modal-result-band warn">
+            <div class="modal-bortle">${escapeHtml(result.title)}</div>
+            <div>${escapeHtml(result.detail)}</div>
+          </div>
+          <div class="modal-note">여러 방향에서 3개 이상 관측 기록을 저장하면 결과가 더 안정적입니다.</div>
+        `);
+        diagnosisBox.innerHTML = `<strong class="${result.tone}">${result.title}</strong><br>${result.detail}`;
+        return;
+      }
+
+      const observedCount = observationRecords.filter(record => record.level > 0).length;
+      const missedCount = observationRecords.filter(record => record.level === 0).length;
+      openResultModal('보틀 등급 추정 결과', `
+        <div class="modal-result-band ${result.tone}">
+          <div class="modal-bortle">추정 보틀 등급: ${escapeHtml(result.bortle)}</div>
+          <div>${escapeHtml(result.note)}</div>
+        </div>
+        <div class="modal-stat-grid">
+          <div class="modal-stat">보정 한계등급<strong>약 ${result.effectiveLimit.toFixed(1)}등급</strong></div>
+          <div class="modal-stat">전체 기록<strong>${observationRecords.length}개</strong></div>
+          <div class="modal-stat">보인 기록<strong>${observedCount}개</strong></div>
+          <div class="modal-stat">안 보인 기록<strong>${missedCount}개</strong></div>
+        </div>
+        <div class="modal-note">주의: 이 값은 실제 측광값이 아니라, 추천 천체의 가시성·은하수 여부·하늘 배경 응답을 결합한 교육용 추정입니다.</div>
+      `);
+      diagnosisBox.innerHTML = `<strong class="${result.tone}">추정 결과가 결과 창으로 표시되었습니다.</strong><br>` +
+        `관측을 더 추가하거나 설문 응답을 바꾼 뒤 다시 “보틀 등급 추정하기”를 누르면 결과를 갱신할 수 있습니다.`;
+    }
+
+    function updateViewTexts() {
+      viewAzText.textContent = `${Number(viewAzInput.value)}°`;
+      viewAltText.textContent = `${Number(viewAltInput.value)}°`;
+      zoomText.textContent = `${getSkyZoom().toFixed(1)}×`;
+      viewSummary.textContent = `${directionLabel(Number(viewAzInput.value))}쪽 / ${Number(viewAltInput.value)}° / 확대 ${getSkyZoom().toFixed(1)}×`;
+
+      viewPresets.forEach(btn => {
+        const az = Number(btn.dataset.az);
+        const alt = Number(btn.dataset.alt);
+        const active = az === Number(viewAzInput.value) && alt === Number(viewAltInput.value);
+        btn.classList.toggle('active', active);
+      });
+    }
+
+    function draw() {
+      computeProjectedObjects();
+      drawBackground();
+    }
+
+    function animationFrame(now) {
+      const dt = (now - lastFrame) / 1000;
+      lastFrame = now;
+      if (isPlaying) {
+        simDate = new Date(simDate.getTime() + dt * 1000 * timeSpeed);
+        setTimeInputFromDate(simDate);
+      }
+      updateRenderedView(dt);
+      draw();
+      if (sensorMode && lastSensorEventTime && performance.now() - lastSensorEventTime > 5000) {
+        setSensorStatus('센서 신호가 약합니다. 움직이지 않으면 수동 조작을 사용하세요.', true);
+      }
+      requestAnimationFrame(animationFrame);
+    }
+
+    function setSimFromInput() {
+      simDate = timeInput.value ? new Date(timeInput.value) : new Date();
+      draw();
+    }
+
+    function canvasPoint(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return {
+        x: (evt.clientX - rect.left) * scaleX,
+        y: (evt.clientY - rect.top) * scaleY,
+      };
+    }
+
+
+
+    function setSensorStatus(text, active = false) {
+      sensorStatus.textContent = text;
+      sensorDot.classList.toggle('on', active);
+      sensorBtn.classList.toggle('active', active);
+      manualBtn.classList.toggle('active', !active);
+    }
+
+    function isSecureSensorContext() {
+      return window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    }
+
+    function useCurrentLocation() {
+      if (!('geolocation' in navigator)) {
+        alert('이 브라우저에서는 위치 정보를 사용할 수 없습니다. 위도와 경도를 직접 입력해 주세요.');
+        return;
+      }
+      geoBtn.textContent = '위치 확인 중...';
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          latInput.value = pos.coords.latitude.toFixed(4);
+          lonInput.value = pos.coords.longitude.toFixed(4);
+          geoBtn.textContent = '현재 위치 사용';
+          draw();
+        },
+        err => {
+          geoBtn.textContent = '현재 위치 사용';
+          alert(`위치 정보를 가져오지 못했습니다: ${err.message || '권한이 거부되었거나 위치 확인에 실패했습니다.'}`);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    }
+
+    function getScreenOrientationDeg() {
+      if (screen.orientation && Number.isFinite(screen.orientation.angle)) return screen.orientation.angle;
+      if (Number.isFinite(window.orientation)) return window.orientation;
+      return 0;
+    }
+
+    function normalizeDeg(value) {
+      return ((value % 360) + 360) % 360;
+    }
+
+    function smoothDeg(previous, next, ratio = 0.35) {
+      if (!Number.isFinite(previous)) return normalizeDeg(next);
+      const diff = ((next - previous + 540) % 360) - 180;
+      return normalizeDeg(previous + diff * ratio);
+    }
+
+    function smoothNumber(previous, next, ratio = 0.35) {
+      if (!Number.isFinite(previous)) return next;
+      return previous + (next - previous) * ratio;
+    }
+
+    function sensorAltFromBetaGamma(beta, gamma) {
+      if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return Number(viewAltInput.value);
+
+      // 화면이 위를 향해 평평하게 놓이면 고도 90°, 화면이 세워지면 지평선 근처로 해석합니다.
+      // 모바일 브라우저마다 beta/gamma 축이 조금씩 달라서 두 기울기의 합성값을 사용합니다.
+      const tiltFromZenith = Math.min(90, Math.hypot(beta, gamma));
+      return Math.max(0, Math.min(90, 90 - tiltFromZenith));
+    }
+
+    function compassHeadingFromOrientation(event) {
+      // iOS Safari는 webkitCompassHeading을 제공하는 경우가 가장 안정적입니다.
+      if (Number.isFinite(event.webkitCompassHeading)) {
+        return normalizeDeg(event.webkitCompassHeading);
+      }
+
+      if (!Number.isFinite(event.alpha)) return null;
+
+      // Android Chrome 계열은 deviceorientationabsolute에서 alpha가 나침반 방위에 가깝게 들어오는 경우가 많습니다.
+      // 기존 구현은 무조건 360-alpha를 써서 일부 기기에서 회전이 반대로 보이거나 거의 고정되는 문제가 있었습니다.
+      // 화면 회전 각도까지 반영해 천구 시점이 실제 기기 회전에 따라 확실히 갱신되도록 합니다.
+      const screenAngle = getScreenOrientationDeg();
+      return normalizeDeg(360 - event.alpha + screenAngle);
+    }
+
+    function handleOrientation(event) {
+      if (!sensorMode) return;
+      sensorEventCount += 1;
+      lastSensorEventTime = performance.now();
+
+      const heading = compassHeadingFromOrientation(event);
+      const altitude = sensorAltFromBetaGamma(event.beta, event.gamma);
+      lastOrientationEventDebug = `alpha:${Number.isFinite(event.alpha) ? event.alpha.toFixed(1) : '없음'} beta:${Number.isFinite(event.beta) ? event.beta.toFixed(1) : '없음'} gamma:${Number.isFinite(event.gamma) ? event.gamma.toFixed(1) : '없음'} absolute:${event.absolute ? 'Y' : 'N'}`;
+
+      let changed = false;
+      if (Number.isFinite(heading)) {
+        sensorLastAz = smoothDeg(sensorLastAz, heading);
+        motionFallbackHeading = sensorLastAz;
+        changed = true;
+      }
+      if (Number.isFinite(altitude)) {
+        sensorLastAlt = Math.max(0, Math.min(90, smoothNumber(sensorLastAlt, altitude)));
+        changed = true;
+      }
+
+      if (changed) {
+        setViewTarget(sensorLastAz, sensorLastAlt);
+        setSensorStatus(`센서 사용 중 · 방위 ${Math.round(targetViewAz)}° / 고도 ${Math.round(targetViewAlt)}°`, true);
+      } else {
+        setSensorStatus(`센서 이벤트 수신 · 값이 비어 있습니다 (${lastOrientationEventDebug})`, true);
+      }
+    }
+
+    function handleMotionFallback(event) {
+      if (!sensorMode) return;
+      const rotation = event.rotationRate;
+      if (!rotation) return;
+
+      const now = Number.isFinite(event.timeStamp) ? event.timeStamp : performance.now();
+      if (!lastMotionTimestamp) {
+        lastMotionTimestamp = now;
+        return;
+      }
+      const dt = Math.max(0, Math.min(0.25, (now - lastMotionTimestamp) / 1000));
+      lastMotionTimestamp = now;
+
+      // 일부 Android 기기는 절대 방위 alpha를 제공하지 않지만, 자이로 회전률은 제공합니다.
+      // 이 경우에는 현재 방위값을 기준으로 좌우 회전만 누적해 천구가 최소한 사용자의 회전에 반응하게 합니다.
+      const yawRate = Number.isFinite(rotation.alpha) ? rotation.alpha : 0;
+      if (Math.abs(yawRate) < 0.05) return;
+
+      motionFallbackHeading = normalizeDeg(motionFallbackHeading - yawRate * dt);
+      sensorLastAz = smoothDeg(sensorLastAz, motionFallbackHeading, 0.5);
+      setViewTarget(sensorLastAz, sensorLastAlt, true);
+      sensorEventCount += 1;
+      lastSensorEventTime = performance.now();
+      setSensorStatus(`자이로 보조 모드 · 방위 ${Math.round(targetViewAz)}° / 고도 ${Math.round(targetViewAlt)}°`, true);
+    }
+
+    function eulerFromQuaternion(q) {
+      if (!q || q.length < 4) return null;
+      const x = q[0], y = q[1], z = q[2], w = q[3];
+      const sinr = 2 * (w * x + y * z);
+      const cosr = 1 - 2 * (x * x + y * y);
+      const roll = Math.atan2(sinr, cosr);
+      const sinp = 2 * (w * y - z * x);
+      const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+      const siny = 2 * (w * z + x * y);
+      const cosy = 1 - 2 * (y * y + z * z);
+      const yaw = Math.atan2(siny, cosy);
+      return { yaw: yaw * 180 / Math.PI, pitch: pitch * 180 / Math.PI, roll: roll * 180 / Math.PI };
+    }
+
+    function handleGenericOrientationSensor(sensor, label) {
+      if (!sensorMode || !sensor || !sensor.quaternion) return;
+      const e = eulerFromQuaternion(sensor.quaternion);
+      if (!e) return;
+      const screenAngle = getScreenOrientationDeg();
+      const heading = normalizeDeg(360 - e.yaw + screenAngle);
+      const altitude = Math.max(0, Math.min(90, 90 - Math.min(90, Math.hypot(e.pitch, e.roll))));
+      sensorLastAz = smoothDeg(sensorLastAz, heading, 0.3);
+      sensorLastAlt = smoothNumber(sensorLastAlt, altitude, 0.3);
+      setViewTarget(sensorLastAz, sensorLastAlt, true);
+      sensorEventCount += 1;
+      lastSensorEventTime = performance.now();
+      setSensorStatus(`${label} 사용 중 · 방위 ${Math.round(targetViewAz)}° / 고도 ${Math.round(targetViewAlt)}°`, true);
+    }
+
+    function startGenericSensorsIfAvailable() {
+      // Android Chrome 일부 환경에서는 구형 deviceorientation 이벤트보다 Generic Sensor API가 더 잘 동작합니다.
+      // 지원되지 않거나 사이트 설정에서 차단되면 예외가 나므로 조용히 기존 이벤트 방식으로 fallback합니다.
+      try {
+        if ('AbsoluteOrientationSensor' in window && !absoluteSensor) {
+          absoluteSensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'device' });
+          absoluteSensor.addEventListener('reading', () => handleGenericOrientationSensor(absoluteSensor, '절대 방향 센서'));
+          absoluteSensor.addEventListener('error', evt => {
+            const name = evt.error && evt.error.name ? evt.error.name : '오류';
+            lastOrientationEventDebug = `AbsoluteOrientationSensor ${name}`;
+          });
+          absoluteSensor.start();
+        }
+      } catch (err) {
+        lastOrientationEventDebug = `AbsoluteOrientationSensor 실패: ${err.name || err.message || err}`;
+      }
+
+      try {
+        if ('RelativeOrientationSensor' in window && !relativeSensor) {
+          relativeSensor = new RelativeOrientationSensor({ frequency: 30, referenceFrame: 'device' });
+          relativeSensor.addEventListener('reading', () => handleGenericOrientationSensor(relativeSensor, '상대 방향 센서'));
+          relativeSensor.addEventListener('error', evt => {
+            const name = evt.error && evt.error.name ? evt.error.name : '오류';
+            lastOrientationEventDebug = `RelativeOrientationSensor ${name}`;
+          });
+          relativeSensor.start();
+        }
+      } catch (err) {
+        lastOrientationEventDebug = `RelativeOrientationSensor 실패: ${err.name || err.message || err}`;
+      }
+    }
+
+    function stopGenericSensors() {
+      try { if (absoluteSensor) absoluteSensor.stop(); } catch (e) {}
+      try { if (relativeSensor) relativeSensor.stop(); } catch (e) {}
+      absoluteSensor = null;
+      relativeSensor = null;
+    }
+
+    async function requestSensorPermissionsIfNeeded() {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        if (permission !== 'granted') throw new Error('방향 센서 권한이 허용되지 않았습니다.');
+      }
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        // 일부 iOS 환경에서는 motion 권한도 같이 요청해야 orientation 이벤트가 안정적으로 들어옵니다.
+        const permission = await DeviceMotionEvent.requestPermission();
+        if (permission !== 'granted') throw new Error('동작 센서 권한이 허용되지 않았습니다.');
+      }
+    }
+
+    async function enableSensorMode() {
+      if (sensorMode) {
+        disableSensorMode();
+        return;
+      }
+
+      sensorMode = true;
+      sensorEventCount = 0;
+      sensorLastAz = Number(viewAzInput.value);
+      sensorLastAlt = Number(viewAltInput.value);
+      motionFallbackHeading = Number(viewAzInput.value);
+      lastMotionTimestamp = 0;
+      lastOrientationEventDebug = '';
+
+      // Android Chrome은 일반적으로 별도 권한 팝업을 띄우지 않습니다.
+      // HTTPS와 사용자 버튼 클릭 조건을 만족하면 이벤트가 바로 들어오므로, 상태 문구도 그에 맞춥니다.
+      setSensorStatus('센서 연결 시도 중 · Android는 권한 팝업 없이 바로 시작될 수 있습니다.', false);
+      try {
+        if (!isSecureSensorContext()) {
+          throw new Error('센서는 HTTPS 또는 localhost 환경에서만 안정적으로 작동합니다. GitHub Pages 주소로 접속해 주세요.');
+        }
+        if (typeof DeviceOrientationEvent === 'undefined' && typeof DeviceMotionEvent === 'undefined') {
+          throw new Error('이 브라우저에서는 방향/동작 센서 API를 사용할 수 없습니다.');
+        }
+        await requestSensorPermissionsIfNeeded();
+
+        window.removeEventListener('deviceorientation', handleOrientation, true);
+        window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
+        window.removeEventListener('devicemotion', handleMotionFallback, true);
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+        window.addEventListener('devicemotion', handleMotionFallback, true);
+        startGenericSensorsIfAvailable();
+
+        setSensorStatus('센서 대기 중 · 권한 팝업이 없어도 정상입니다. 휴대폰을 좌우로 돌리거나 기울여 보세요.', true);
+
+        if (sensorWatchdogTimer) clearTimeout(sensorWatchdogTimer);
+        sensorWatchdogTimer = setTimeout(() => {
+          if (sensorMode && sensorEventCount === 0) {
+            setSensorStatus('센서 이벤트가 없습니다. Chrome 주소창 자물쇠 → 사이트 설정 → 동작 센서/센서 허용, Chrome 설정의 동작 센서 허용을 확인해 주세요.', false);
+          } else if (sensorMode && lastOrientationEventDebug) {
+            setSensorStatus(`센서 수신 중 · ${lastOrientationEventDebug}`, true);
+          }
+        }, 3200);
+      } catch (err) {
+        sensorMode = false;
+        setSensorStatus(err.message || '센서를 사용할 수 없습니다. 수동 모드를 사용하세요.', false);
+      }
+    }
+
+    function disableSensorMode() {
+      sensorMode = false;
+      window.removeEventListener('deviceorientation', handleOrientation, true);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.removeEventListener('devicemotion', handleMotionFallback, true);
+      stopGenericSensors();
+      if (sensorWatchdogTimer) clearTimeout(sensorWatchdogTimer);
+      sensorWatchdogTimer = null;
+      lastMotionTimestamp = 0;
+      setSensorStatus('수동 조작 모드 · 드래그 또는 슬라이더로 하늘을 돌려 보세요.', false);
+    }
+
+    function visibilityChoiceText(level) {
+      if (level === 2) return '뚜렷하게 보임';
+      if (level === 1) return '희미하게 보임';
+      return '안 보임';
+    }
+
+    function applyVisibilityChoice(level) {
+      if (!currentCandidate) {
+        alert('현재 추천 천체가 없습니다. 먼저 하늘 방향을 조정해 주세요.');
+        return;
+      }
+      const candidateSnapshot = { ...currentCandidate };
+      pendingObservation = { candidate: candidateSnapshot, level };
+      selectObject(candidateSnapshot);
+      visibilityBtns.forEach(btn => btn.classList.toggle('active', Number(btn.dataset.visibility) === level));
+      saveObservationBtn.disabled = false;
+      pendingObservationStatus.innerHTML = `<strong>${candidateSnapshot.name}</strong> · ${visibilityChoiceText(level)} 선택됨. 아래의 “관측 기록 저장”을 눌러야 진단에 반영됩니다.`;
+    }
+
+    function savePendingObservation() {
+      if (!pendingObservation) {
+        alert('저장할 관측 선택이 없습니다. 먼저 보이는 정도를 선택해 주세요.');
+        return;
+      }
+      const { candidate, level } = pendingObservation;
+      if (observationRecords.some(record => record.id === candidate.id)) {
+        pendingObservationStatus.innerHTML = `<strong>${candidate.name}</strong>은 이미 관측된 별입니다. 다른 별을 선택해 주세요.`;
+        pendingObservation = null;
+        saveObservationBtn.disabled = true;
+        visibilityBtns.forEach(btn => btn.classList.remove('active'));
+        return;
+      }
+      const effectiveMag = level === 2
+        ? candidate.mag + 0.15
+        : level === 1
+          ? candidate.mag + 0.45
+          : candidate.mag;
+
+      observationRecords.push({
+        id: candidate.id,
+        name: candidate.name,
+        mag: Number(candidate.mag),
+        effectiveMag,
+        level,
+        azDeg: candidate.azDeg,
+        altDeg: candidate.altDeg,
+        at: new Date().toISOString(),
+      });
+
+      pendingObservationStatus.innerHTML = `<strong>${candidate.name}</strong> 관측 기록이 저장되었습니다. 다른 별을 선택한 뒤 다시 저장할 수 있습니다.`;
+      pendingObservation = null;
+      saveObservationBtn.disabled = true;
+      visibilityBtns.forEach(btn => btn.classList.remove('active'));
+      updateDiagnosis();
+    }
+
+    function resetObservations() {
+      observationRecords = [];
+      bestObservedMag = null;
+      brightestMissedMag = null;
+      pendingObservation = null;
+      saveObservationBtn.disabled = true;
+      pendingObservationStatus.textContent = '보이는 정도를 선택한 뒤 저장하면 관측 기록에 반영됩니다.';
+      visibilityBtns.forEach(btn => btn.classList.remove('active'));
+      updateDiagnosis();
+    }
+
+    function startDrag(evt) {
+      if (sensorMode) disableSensorMode();
+      dragging = true;
+      dragMoved = false;
+      const p = canvasPoint(evt);
+      dragStartX = p.x;
+      dragStartY = p.y;
+      dragStartAz = Number(viewAzInput.value);
+      dragStartAlt = Number(viewAltInput.value);
+      canvas.classList.add('dragging');
+    }
+
+    function moveDrag(evt) {
+      if (!dragging) return;
+      const p = canvasPoint(evt);
+      const dx = p.x - dragStartX;
+      const dy = p.y - dragStartY;
+      if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+
+      const dragZoom = getSkyZoom();
+      let newAz = dragStartAz - dx * 0.18 / dragZoom;
+      let newAlt = dragStartAlt + dy * 0.12 / dragZoom;
+      newAz = ((newAz % 360) + 360) % 360;
+      newAlt = Math.max(0, Math.min(90, newAlt));
+      setViewTarget(newAz, newAlt);
+      draw();
+    }
+
+    function endDrag(evt) {
+      if (!dragging) return;
+      canvas.classList.remove('dragging');
+      dragging = false;
+      if (!dragMoved) {
+        const p = canvasPoint(evt);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const radius = canvas.width * 0.44;
+        if (Math.hypot(p.x - cx, p.y - cy) <= radius) {
+          const nearest = findNearestRepresentative(p.x, p.y);
+          if (nearest && autoNearest) selectObject(nearest);
+        }
+      }
+    }
+
+    function distanceBetweenActivePointers() {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return 0;
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+
+    canvas.addEventListener('pointerdown', (evt) => {
+      canvas.setPointerCapture(evt.pointerId);
+      const p = canvasPoint(evt);
+      activePointers.set(evt.pointerId, p);
+      if (activePointers.size === 2) {
+        if (sensorMode) disableSensorMode();
+        pinching = true;
+        dragging = false;
+        canvas.classList.remove('dragging');
+        pinchStartDistance = distanceBetweenActivePointers();
+        pinchStartZoom = getSkyZoom();
+        return;
+      }
+      if (activePointers.size === 1) startDrag(evt);
+    });
+    canvas.addEventListener('pointermove', (evt) => {
+      const p = canvasPoint(evt);
+      if (activePointers.has(evt.pointerId)) activePointers.set(evt.pointerId, p);
+      clickCandidate = findNearestRepresentative(p.x, p.y);
+      if (pinching && activePointers.size >= 2) {
+        const dist = distanceBetweenActivePointers();
+        if (pinchStartDistance > 0 && dist > 0) {
+          setSkyZoom(pinchStartZoom * dist / pinchStartDistance);
+        }
+        return;
+      }
+      if (dragging) moveDrag(evt);
+    });
+    canvas.addEventListener('pointerup', (evt) => {
+      activePointers.delete(evt.pointerId);
+      if (pinching) {
+        pinching = false;
+        dragging = false;
+        canvas.classList.remove('dragging');
+        return;
+      }
+      endDrag(evt);
+    });
+    canvas.addEventListener('pointercancel', (evt) => {
+      activePointers.delete(evt.pointerId);
+      pinching = false;
+      dragging = false;
+      canvas.classList.remove('dragging');
+    });
+    canvas.addEventListener('mouseleave', () => { clickCandidate = null; });
+
+    latInput.addEventListener('input', draw);
+    lonInput.addEventListener('input', draw);
+    timeInput.addEventListener('change', setSimFromInput);
+
+    nowBtn.addEventListener('click', () => {
+      simDate = new Date();
+      setTimeInputFromDate(simDate);
+      draw();
+    });
+
+    geoBtn.addEventListener('click', useCurrentLocation);
+    sensorBtn.addEventListener('click', enableSensorMode);
+    manualBtn.addEventListener('click', disableSensorMode);
+    visibilityBtns.forEach(btn => {
+      btn.addEventListener('click', () => applyVisibilityChoice(Number(btn.dataset.visibility)));
+    });
+
+    playBtn.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      playBtn.textContent = isPlaying ? '천구 회전: 재생 중' : '천구 회전: 일시정지';
+      playBtn.classList.toggle('active', isPlaying);
+    });
+
+    speedBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        timeSpeed = Number(btn.dataset.speed);
+        speedBtns.forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+
+    showConstellationBtn.addEventListener('click', () => {
+      showConstellations = !showConstellations;
+      showConstellationBtn.classList.toggle('active', showConstellations);
+      showConstellationBtn.textContent = `별자리선: ${showConstellations ? '켜짐' : '꺼짐'}`;
+      draw();
+    });
+
+    showMilkyWayBtn.addEventListener('click', () => {
+      showMilkyWay = !showMilkyWay;
+      showMilkyWayBtn.classList.toggle('active', showMilkyWay);
+      showMilkyWayBtn.textContent = `은하수 영역: ${showMilkyWay ? '켜짐' : '꺼짐'}`;
+      draw();
+    });
+
+    showSolarSystemBtn.addEventListener('click', () => {
+      showSolarSystem = !showSolarSystem;
+      showSolarSystemBtn.classList.toggle('active', showSolarSystem);
+      showSolarSystemBtn.textContent = `달·행성: ${showSolarSystem ? '켜짐' : '꺼짐'}`;
+      draw();
+    });
+
+    showCrosshairBtn.addEventListener('click', () => {
+      showCrosshair = !showCrosshair;
+      showCrosshairBtn.classList.toggle('active', showCrosshair);
+      showCrosshairBtn.textContent = `원형 조준선: ${showCrosshair ? '켜짐' : '꺼짐'}`;
+      draw();
+    });
+
+    toggleNearest.addEventListener('click', () => {
+      autoNearest = !autoNearest;
+      toggleNearest.classList.toggle('active', autoNearest);
+      toggleNearest.textContent = `근처 천체 자동 선택: ${autoNearest ? '켜짐' : '꺼짐'}`;
+    });
+
+    showAllBtn.addEventListener('click', () => {
+      alert(currentProjected.length
+        ? currentProjected.map(obj => `${obj.name} · ${directionLabel(obj.azDeg)} · 고도 ${obj.altDeg.toFixed(1)}°`).join('\n')
+        : '현재 시점에서 보이는 대표 천체가 없습니다.');
+    });
+
+    clearBtn.addEventListener('click', clearSelection);
+    milkyWaySelect.addEventListener('change', updateDiagnosis);
+    skyGlowSelect.addEventListener('change', updateDiagnosis);
+    saveObservationBtn.addEventListener('click', savePendingObservation);
+    estimateBortleBtn.addEventListener('click', showBortleEstimatePopup);
+    resetObservationsBtn.addEventListener('click', resetObservations);
+
+    surveyOptionBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const select = document.getElementById(btn.dataset.select);
+        if (!select) return;
+        select.value = btn.dataset.value;
+        surveyOptionBtns
+          .filter(other => other.dataset.select === btn.dataset.select)
+          .forEach(other => other.classList.toggle('active', other === btn));
+        updateDiagnosis();
+      });
+    });
+
+    viewAzInput.addEventListener('input', () => { setViewTarget(Number(viewAzInput.value), targetViewAlt, false); draw(); });
+    viewAltInput.addEventListener('input', () => { setViewTarget(targetViewAz, Number(viewAltInput.value), false); draw(); });
+    zoomInput.addEventListener('input', () => { setSkyZoom(zoomInput.value); });
+    zoomInBtn.addEventListener('click', () => setSkyZoom(getSkyZoom() + 0.2));
+    zoomOutBtn.addEventListener('click', () => setSkyZoom(getSkyZoom() - 0.2));
+    zoomResetBtn.addEventListener('click', () => setSkyZoom(1));
+    canvas.addEventListener('wheel', (evt) => {
+      evt.preventDefault();
+      const nextZoom = Math.max(1, Math.min(4, getSkyZoom() + (evt.deltaY < 0 ? 0.15 : -0.15)));
+      setSkyZoom(nextZoom);
+    }, { passive: false });
+
+    viewPresets.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setViewTarget(Number(btn.dataset.az), Number(btn.dataset.alt));
+        draw();
+      });
+    });
+
+    resetViewBtn.addEventListener('click', () => {
+      setViewTarget(180, 45);
+      renderedViewAz = 180;
+      renderedViewAlt = 45;
+      zoomInput.value = '1';
+      updateViewTexts();
+      draw();
+    });
+
+    document.getElementById('resultModalClose')?.addEventListener('click', closeResultModal);
+    document.getElementById('resultModalOk')?.addEventListener('click', closeResultModal);
+    document.getElementById('resultModal')?.addEventListener('click', (evt) => {
+      if (evt.target && evt.target.id === 'resultModal') closeResultModal();
+    });
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') closeResultModal();
+    });
+
+    setTimeInputFromDate(simDate);
+    createSeasonButtons();
+    setViewTarget(Number(viewAzInput.value), Number(viewAltInput.value));
+    updateViewTexts();
+    draw();
+    requestAnimationFrame(animationFrame);
+  </script>
+</body>
+</html>
