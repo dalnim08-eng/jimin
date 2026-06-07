@@ -1,0 +1,3018 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>궤도요소 기반 위성 통과 시뮬레이터 - 적분 시각화</title>
+  <style>
+    :root {
+      --bg: #080b13;
+      --panel: rgba(18, 24, 38, 0.88);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --text: #e8eefc;
+      --muted: #9fb0d0;
+      --accent: #75d6ff;
+      --accent-2: #9cffb0;
+      --warn: #ffcf70;
+      --danger: #ff7a7a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #11182a 0%, var(--bg) 60%, #02040a 100%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    canvas.webgl {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .panel {
+      position: absolute;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      user-select: none;
+      resize: both;
+      overflow: auto;
+      min-width: 260px;
+      min-height: 130px;
+      z-index: 10;
+    }
+
+    .panel.dragging {
+      opacity: 0.96;
+      cursor: grabbing;
+      z-index: 30;
+    }
+
+    .drag-handle { cursor: grab; }
+
+    .panel-header,
+    .observer-head,
+    .spectrum-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 12px;
+    }
+
+    .panel-header h2,
+    .observer-head h2,
+    .spectrum-head h2 { margin: 0; }
+
+    .close-panel {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 9px;
+      line-height: 1;
+      font-size: 17px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .panel-dock {
+      position: absolute;
+      left: 50%;
+      top: 18px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(18, 24, 38, 0.78);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      z-index: 40;
+    }
+
+    .dock-btn {
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .dock-btn.hidden-panel {
+      background: rgba(117, 214, 255, 0.16);
+      border-color: rgba(117, 214, 255, 0.32);
+    }
+
+    .panel.collapsed { display: none; }
+
+    .title-panel {
+      top: 18px;
+      left: 18px;
+      width: min(520px, calc(100vw - 36px));
+      min-height: 135px;
+      padding: 16px 18px;
+    }
+
+    .title-panel h1 {
+      margin: 0 0 6px;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    .title-panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .controls {
+      left: 18px;
+      bottom: 18px;
+      width: 470px;
+      min-width: 430px;
+      min-height: 360px;
+      max-height: min(72vh, 680px);
+      padding: 16px;
+    }
+
+    .controls h2,
+    .status h2,
+    .graph-panel h2,
+    .spectrum-panel h2,
+    .observer-panel h2 {
+      font-size: 15px;
+      color: #ffffff;
+    }
+
+    .control-row {
+      display: grid;
+      grid-template-columns: 112px minmax(130px, 1fr) 88px 74px;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+
+    .control-row label { color: var(--muted); }
+    .control-row input[type="range"] { width: 100%; min-width: 0; accent-color: var(--accent); }
+
+    .control-row input[type="number"] {
+      width: 88px;
+      min-width: 0;
+      padding: 7px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+      outline: none;
+    }
+
+    input[type="number"]:focus {
+      border-color: rgba(117, 214, 255, 0.62);
+      box-shadow: 0 0 0 2px rgba(117, 214, 255, 0.15);
+    }
+
+    .value {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    button {
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 8px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button:hover { background: rgba(117, 214, 255, 0.16); }
+
+    .status {
+      top: 18px;
+      right: 18px;
+      width: 330px;
+      min-height: 360px;
+      padding: 16px;
+    }
+
+    .stat-grid { display: grid; gap: 8px; }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+    }
+
+    .stat span:first-child { color: var(--muted); }
+    .stat span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+    .visible { color: var(--accent-2); font-weight: 800; }
+    .hidden { color: var(--danger); font-weight: 800; }
+
+    .observer-panel {
+      left: 430px;
+      top: 190px;
+      width: 420px;
+      min-width: 340px;
+      min-height: 350px;
+      padding: 16px;
+    }
+
+    .spectrum-panel {
+      left: 430px;
+      bottom: 18px;
+      width: min(560px, calc(100vw - 940px));
+      min-width: 420px;
+      min-height: 330px;
+      padding: 16px;
+    }
+
+    .graph-panel {
+      right: 18px;
+      bottom: 18px;
+      width: min(470px, calc(100vw - 440px));
+      min-width: 320px;
+      min-height: 300px;
+      padding: 16px;
+    }
+
+    .analysis-view {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: block;
+      overflow: auto;
+      padding: 22px;
+      background:
+        radial-gradient(circle at top left, rgba(117, 214, 255, 0.12), transparent 34%),
+        radial-gradient(circle at bottom right, rgba(156, 255, 176, 0.10), transparent 38%),
+        rgba(4, 7, 14, 0.96);
+      backdrop-filter: blur(14px);
+    }
+
+    .analysis-view.hidden-view { display: none; }
+
+    .analysis-page {
+      width: min(1180px, calc(100vw - 44px));
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .analysis-page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .analysis-page-header h2 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+    }
+
+    .analysis-page-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .analysis-back-btn {
+      white-space: nowrap;
+      padding: 11px 14px;
+      border-radius: 999px;
+    }
+
+    .analysis-page-grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.35fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .analysis-card {
+      padding: 16px;
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.30);
+    }
+
+    .analysis-card h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      color: #ffffff;
+    }
+
+    .analysis-grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .analysis-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .analysis-actions button { font-size: 12px; }
+
+
+    .event-analysis-box {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .event-analysis-box h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: #ffffff;
+    }
+
+    .event-select-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .event-analysis-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .event-analysis-actions button { font-size: 12px; }
+
+    #eventSignalGraph {
+      width: 100%;
+      height: clamp(300px, 42vh, 520px);
+      display: block;
+      border-radius: 14px;
+      background: rgba(2, 5, 12, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      margin-top: 8px;
+    }
+
+    .event-analysis-text {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(117, 214, 255, 0.08);
+      border: 1px solid rgba(117, 214, 255, 0.14);
+      color: #dff7ff;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+
+
+    .auto-experiment-card {
+      grid-column: 1 / -1;
+    }
+
+    .auto-experiment-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .auto-experiment-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .auto-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .auto-results-wrap {
+      overflow-x: auto;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(2, 5, 12, 0.42);
+    }
+
+    .auto-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+      font-size: 12px;
+    }
+
+    .auto-table th,
+    .auto-table td {
+      padding: 8px 9px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .auto-table th:first-child,
+    .auto-table td:first-child,
+    .auto-table th:nth-child(2),
+    .auto-table td:nth-child(2) {
+      text-align: left;
+    }
+
+    .auto-table th {
+      color: #ffffff;
+      background: rgba(117, 214, 255, 0.10);
+      position: sticky;
+      top: 0;
+    }
+
+    .auto-table td {
+      color: var(--text);
+    }
+
+    .auto-summary {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 207, 112, 0.08);
+      border: 1px solid rgba(255, 207, 112, 0.18);
+      color: #ffe8ad;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-line;
+    }
+
+
+    .auto-view-btn {
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .replay-badge {
+      position: absolute;
+      left: 50%;
+      top: 70px;
+      transform: translateX(-50%);
+      z-index: 55;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255, 207, 112, 0.16);
+      border: 1px solid rgba(255, 207, 112, 0.32);
+      color: #ffe8ad;
+      font-size: 12px;
+      backdrop-filter: blur(12px);
+      display: none;
+      pointer-events: none;
+    }
+
+    .replay-badge.visible { display: block; }
+
+    .calculus-note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 207, 112, 0.08);
+      border: 1px solid rgba(255, 207, 112, 0.18);
+      color: #ffe8ad;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .integral-mini {
+      margin-top: 10px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .integral-bar-shell {
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .integral-bar-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(117,214,255,0.75), rgba(255,207,112,0.90));
+      transition: width 0.18s ease;
+    }
+
+
+    .preset-box {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .preset-box h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: #ffffff;
+    }
+
+    .preset-input-row,
+    .preset-select-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .preset-input-row input,
+    .preset-select-row select {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .preset-select-row select option { color: #111827; }
+
+    .preset-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .preset-actions button,
+    .preset-input-row button,
+    .preset-select-row button { font-size: 12px; }
+
+    .mini-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #observerView,
+    #signalGraph,
+    #spectrumGraph {
+      width: 100%;
+      display: block;
+      border-radius: 14px;
+      background: rgba(2, 5, 12, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    #observerView {
+      height: clamp(210px, calc(100% - 118px), 520px);
+      background: radial-gradient(circle at center, rgba(15, 27, 48, 0.92), rgba(2, 5, 12, 0.95));
+    }
+
+    #signalGraph { height: clamp(170px, calc(100% - 86px), 520px); }
+    #spectrumGraph { height: clamp(190px, calc(100% - 118px), 540px); }
+
+    .switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .switch {
+      position: relative;
+      width: 58px;
+      height: 28px;
+      display: inline-block;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider-switch {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: rgba(255,255,255,0.13);
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 999px;
+      transition: 0.2s;
+    }
+
+    .slider-switch:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 4px;
+      top: 3px;
+      background: var(--accent);
+      border-radius: 50%;
+      transition: 0.2s;
+      box-shadow: 0 0 12px rgba(117,214,255,0.55);
+    }
+
+    .switch input:checked + .slider-switch:before {
+      transform: translateX(28px);
+      background: var(--warn);
+      box-shadow: 0 0 12px rgba(255,207,112,0.55);
+    }
+
+    .legend {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .formula {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(117, 214, 255, 0.08);
+      border: 1px solid rgba(117, 214, 255, 0.14);
+      color: #dff7ff;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 1280px) {
+      .spectrum-panel { left: auto; right: 18px; bottom: 250px; width: 470px; min-width: 320px; }
+      .observer-panel { left: 18px; top: 190px; width: 390px; }
+    }
+
+
+    @media (max-width: 560px) {
+      .control-row {
+        grid-template-columns: 94px 1fr 70px;
+        row-gap: 6px;
+      }
+      .control-row input[type="number"] {
+        grid-column: 2 / 3;
+        grid-row: 2;
+        width: 100%;
+      }
+      .control-row .value {
+        grid-column: 3 / 4;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 980px) {
+      body { overflow: auto; }
+      #app { min-height: 1580px; }
+      canvas.webgl { height: 100vh; }
+      .title-panel, .controls, .status, .graph-panel, .spectrum-panel, .observer-panel {
+        position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        width: calc(100vw - 32px);
+        min-width: 0;
+        margin: 16px;
+      }
+      .title-panel { margin-top: 16px; }
+      .controls { max-height: none; min-width: 0; }
+      .control-row {
+        grid-template-columns: 94px minmax(110px, 1fr) 82px 64px;
+        gap: 7px;
+      }
+      .control-row input[type="number"] { width: 82px; padding: 6px 7px; }
+      .value { font-size: 12px; }
+    }
+
+    @media (max-width: 900px) {
+      .analysis-view { padding: 14px; }
+      .analysis-page { width: calc(100vw - 28px); }
+      .analysis-page-header { flex-direction: column; }
+      .analysis-page-grid { grid-template-columns: 1fr; }
+      .analysis-back-btn { width: 100%; }
+    }
+
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas class="webgl" id="scene"></canvas>
+
+    <nav class="panel-dock" id="panelDock" aria-label="패널 소환 버튼">
+      <button class="dock-btn" data-target="titlePanel">설명</button>
+      <button class="dock-btn" data-target="controlsPanel">조절</button>
+      <button class="dock-btn" data-target="statusPanel">상태</button>
+      <button class="dock-btn" data-target="observerPanel">관측자</button>
+      <button class="dock-btn" data-target="spectrumPanel">SDR</button>
+      <button class="dock-btn" data-target="graphPanel">그래프</button>
+      <button class="dock-btn" id="openAnalysisView" type="button">분석 화면</button>
+    </nav>
+
+    <div class="replay-badge" id="replayBadge">자동 탐색 결과 재생 중</div>
+
+    <section class="panel title-panel" id="titlePanel" data-panel-name="설명">
+      <div class="drag-handle">
+        <h1>궤도요소 기반 위성 통과 시뮬레이터</h1>
+      </div>
+      <p>
+        지구 자전과 케플러 궤도요소를 반영하여 위성의 3차원 위치를 계산합니다.
+        관측자 기준 고도각, 거리, 도플러 이동, 수신 신호 세기와 누적 수신량을 실시간으로 표시하고, 분석 데이터를 CSV/JSON으로 내보낼 수 있습니다. 장반경은 최대 500,000 km까지 확장되었습니다. WASD 전역 카메라 이동, 카메라 이동속도, 초고속 시간 배속 조절을 지원합니다.
+      </p>
+    </section>
+
+    <section class="panel controls" id="controlsPanel" data-panel-name="조절">
+      <div class="panel-header drag-handle">
+        <h2>조절 슬라이더</h2>
+        <button class="close-panel" data-close="controlsPanel">×</button>
+      </div>
+
+      <div class="control-row"><label for="semiMajor">장반경 a</label><input id="semiMajor" type="range" min="6700" max="500000" step="500" value="7200" /><input id="semiMajorNumber" type="number" min="6700" max="500000" step="500" value="7200" aria-label="장반경 a 숫자 입력" /><div class="value" id="semiMajorValue"></div></div>
+      <div class="control-row"><label for="eccentricity">이심률 e</label><input id="eccentricity" type="range" min="0" max="0.75" step="0.01" value="0.02" /><input id="eccentricityNumber" type="number" min="0" max="0.75" step="0.01" value="0.02" aria-label="이심률 e 숫자 입력" /><div class="value" id="eccentricityValue"></div></div>
+      <div class="control-row"><label for="inclination">경사각 i</label><input id="inclination" type="range" min="0" max="120" step="1" value="98" /><input id="inclinationNumber" type="number" min="0" max="120" step="1" value="98" aria-label="경사각 i 숫자 입력" /><div class="value" id="inclinationValue"></div></div>
+      <div class="control-row"><label for="raan">승교점 Ω</label><input id="raan" type="range" min="0" max="360" step="1" value="35" /><input id="raanNumber" type="number" min="0" max="360" step="1" value="35" aria-label="승교점 Ω 숫자 입력" /><div class="value" id="raanValue"></div></div>
+      <div class="control-row"><label for="argPerigee">근지점 ω</label><input id="argPerigee" type="range" min="0" max="360" step="1" value="40" /><input id="argPerigeeNumber" type="number" min="0" max="360" step="1" value="40" aria-label="근지점 ω 숫자 입력" /><div class="value" id="argPerigeeValue"></div></div>
+      <div class="control-row"><label for="meanAnomaly">초기 M₀</label><input id="meanAnomaly" type="range" min="0" max="360" step="1" value="285" /><input id="meanAnomalyNumber" type="number" min="0" max="360" step="1" value="285" aria-label="초기 M₀ 숫자 입력" /><div class="value" id="meanAnomalyValue"></div></div>
+      <div class="control-row"><label for="observerLat">관측자 위도</label><input id="observerLat" type="range" min="-70" max="70" step="0.1" value="37.5" /><input id="observerLatNumber" type="number" min="-70" max="70" step="0.1" value="37.5" aria-label="관측자 위도 숫자 입력" /><div class="value" id="observerLatValue"></div></div>
+      <div class="control-row"><label for="observerLon">관측자 경도</label><input id="observerLon" type="range" min="-180" max="180" step="0.1" value="127.0" /><input id="observerLonNumber" type="number" min="-180" max="180" step="0.1" value="127.0" aria-label="관측자 경도 숫자 입력" /><div class="value" id="observerLonValue"></div></div>
+      <div class="control-row"><label for="signalGain">안테나 감도 k</label><input id="signalGain" type="range" min="0.2" max="5" step="0.1" value="2.0" /><input id="signalGainNumber" type="number" min="0.2" max="5" step="0.1" value="2.0" aria-label="안테나 감도 k 숫자 입력" /><div class="value" id="signalGainValue"></div></div>
+      <div class="control-row"><label for="carrierFreq">중심 주파수</label><input id="carrierFreq" type="range" min="100" max="500" step="1" value="137" /><input id="carrierFreqNumber" type="number" min="100" max="500" step="1" value="137" aria-label="중심 주파수 숫자 입력" /><div class="value" id="carrierFreqValue"></div></div>
+      <div class="control-row"><label for="bandwidth">표시 대역폭</label><input id="bandwidth" type="range" min="20" max="300" step="5" value="120" /><input id="bandwidthNumber" type="number" min="20" max="300" step="5" value="120" aria-label="표시 대역폭 숫자 입력" /><div class="value" id="bandwidthValue"></div></div>
+      <div class="control-row"><label for="timeScale">시간 배속</label><input id="timeScale" type="range" min="0.1" max="50000" step="1" value="45" /><input id="timeScaleNumber" type="number" min="0.1" max="50000" step="1" value="45" aria-label="시간 배속 숫자 입력" /><div class="value" id="timeScaleValue"></div></div>
+      <div class="control-row"><label for="cameraSpeed">카메라 속도</label><input id="cameraSpeed" type="range" min="0.1" max="8" step="0.1" value="1.0" /><input id="cameraSpeedNumber" type="number" min="0.1" max="8" step="0.1" value="1.0" aria-label="카메라 속도 숫자 입력" /><div class="value" id="cameraSpeedValue"></div></div>
+      <div class="control-row"><label for="manualTime">시간 위치</label><input id="manualTime" type="range" min="0" max="6000" step="1" value="0" /><input id="manualTimeNumber" type="number" min="0" max="6000" step="1" value="0" aria-label="시간 위치 숫자 입력" /><div class="value" id="manualTimeValue"></div></div>
+
+      <div class="button-row">
+        <button id="playPause">일시정지</button>
+        <button id="reset">초기화</button>
+        <button id="presetLEO">LEO 예시</button>
+      </div>
+
+      <div class="formula">
+        신호 모델: S(t) = k · max(0, sin h(t)) / d(t)²<br />
+        도플러: fobs ≈ f₀ · (1 - vr/c)<br />
+        누적 수신량: Q ≈ Σ{S(tᵢ)+S(tᵢ₊₁)}Δt / 2
+      </div>
+    </section>
+
+    <section class="panel status" id="statusPanel" data-panel-name="상태">
+      <div class="panel-header drag-handle">
+        <h2>상태 창</h2>
+        <button class="close-panel" data-close="statusPanel">×</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><span>현재 시간</span><span id="statTime">-</span></div>
+        <div class="stat"><span>지구 자전각</span><span id="statEarthRot">-</span></div>
+        <div class="stat"><span>궤도 주기</span><span id="statPeriod">-</span></div>
+        <div class="stat"><span>궤도 고도</span><span id="statAltitude">-</span></div>
+        <div class="stat"><span>위성 속도</span><span id="statVelocity">-</span></div>
+        <div class="stat"><span>관측자 거리</span><span id="statRange">-</span></div>
+        <div class="stat"><span>거리 변화율 vr</span><span id="statRangeRate">-</span></div>
+        <div class="stat"><span>고도각</span><span id="statElevation">-</span></div>
+        <div class="stat"><span>방위각</span><span id="statAzimuth">-</span></div>
+        <div class="stat"><span>도플러 이동</span><span id="statDoppler">-</span></div>
+        <div class="stat"><span>관측 주파수</span><span id="statObservedFreq">-</span></div>
+        <div class="stat"><span>순간 신호 S(t)</span><span id="statSignal">-</span></div>
+        <div class="stat"><span>신호 변화율 S′(t)</span><span id="statSignalRate">-</span></div>
+        <div class="stat"><span>누적 수신량 Q</span><span id="statIntegral">-</span></div>
+        <div class="stat"><span>관측 가능 여부</span><span id="statVisibility">-</span></div>
+      </div>
+    </section>
+
+    <section class="panel observer-panel" id="observerPanel" data-panel-name="관측자">
+      <div class="observer-head drag-handle">
+        <h2>관측자 시점 3D 모델</h2>
+        <div class="switch-wrap">
+          <span>궤적 끔</span>
+          <label class="switch">
+            <input id="observerTrailMode" type="checkbox" checked />
+            <span class="slider-switch"></span>
+          </label>
+          <span>궤적 켬</span>
+          <button class="close-panel" data-close="observerPanel">×</button>
+        </div>
+      </div>
+      <canvas id="observerView" width="700" height="420"></canvas>
+      <div class="legend">
+        관측자의 머리 위 하늘을 단순화한 3D 지평선 모델입니다. 초록 원판은 지평선, 파란 점은 위성 방향,
+        선은 관측자에서 위성을 향한 시선입니다. 위성이 지평선 아래에 있으면 붉은색으로 표시됩니다.
+      </div>
+    </section>
+
+    <section class="panel spectrum-panel" id="spectrumPanel" data-panel-name="SDR">
+      <div class="spectrum-head drag-handle">
+        <h2>SDR 주파수 스펙트럼</h2>
+        <div class="switch-wrap">
+          <button class="close-panel" data-close="spectrumPanel">×</button>
+          <span>실시간</span>
+          <label class="switch">
+            <input id="spectrumMode" type="checkbox" />
+            <span class="slider-switch"></span>
+          </label>
+          <span>누적</span>
+        </div>
+      </div>
+      <canvas id="spectrumGraph" width="900" height="380"></canvas>
+      <div class="legend">
+        중심 주파수 주변 대역을 SDR 스펙트럼처럼 표시합니다. 위성이 접근하면 도플러 효과로 관측 주파수가 높아지고,
+        멀어지면 낮아집니다. 누적 모드는 지나간 신호 세기를 주파수별로 계속 더합니다.
+      </div>
+    </section>
+
+    <section class="panel graph-panel" id="graphPanel" data-panel-name="그래프">
+      <div class="panel-header drag-handle">
+        <h2>신호 세기 그래프</h2>
+        <button class="close-panel" data-close="graphPanel">×</button>
+      </div>
+      <canvas id="signalGraph" width="900" height="360"></canvas>
+      <div class="legend">
+        파란 곡선은 시간에 따른 수신 신호 세기 S(t), 노란색으로 강조된 영역은 현재까지 누적된 적분 면적입니다.
+        작은 세로 분할선은 사다리꼴 공식으로 면적을 더하는 과정을 나타냅니다.
+      </div>
+      <div class="calculus-note">
+        미분: 곡선의 기울기 S′(t)는 신호가 강해지는지/약해지는지를 뜻합니다.<br />
+        적분: 색칠된 면적 ∫S(t)dt는 위성 통과 동안 받은 총 신호량 Q입니다.
+      </div>
+    </section>
+
+    <section class="analysis-view hidden-view" id="analysisView" aria-label="수신량 분석 화면">
+      <div class="analysis-page">
+        <div class="analysis-page-header">
+          <div>
+            <h2>수신량 분석·저장</h2>
+            <p>
+              시뮬레이터에서 기록한 순간 신호 세기 S(t)를 관측 이벤트별로 분리해 그래프와 해설로 분석합니다.
+              이 화면은 팝업 패널이 아니라 같은 브라우저 안에서 전환되는 독립 분석 화면입니다.
+            </p>
+          </div>
+          <button class="analysis-back-btn" id="closeAnalysisView" type="button">← 시뮬레이터로 돌아가기</button>
+        </div>
+
+        <div class="analysis-page-grid">
+          <div class="analysis-card">
+            <h3>전체 기록 요약</h3>
+            <div class="analysis-grid">
+              <div class="stat"><span>기록 샘플 수</span><span id="analysisSamples">0</span></div>
+              <div class="stat"><span>관측 가능 시간</span><span id="analysisVisibleTime">0 s</span></div>
+              <div class="stat"><span>최대 신호</span><span id="analysisMaxSignal">0.0000</span></div>
+              <div class="stat"><span>최대 고도각</span><span id="analysisMaxElevation">-</span></div>
+              <div class="stat"><span>최단 거리</span><span id="analysisMinRange">-</span></div>
+              <div class="stat"><span>누적 수신량 Q</span><span id="analysisTotalQ">0.00</span></div>
+              <div class="stat"><span>그래프 면적 Qᵍ</span><span id="analysisWindowQ">0.00</span></div>
+              <div class="stat"><span>평균 신호</span><span id="analysisAvgSignal">0.0000</span></div>
+              <div class="stat"><span>저장된 통과 횟수</span><span id="analysisPassCount">0</span></div>
+            </div>
+
+            <div class="integral-mini">
+              <div>현재 그래프에서 색칠된 면적 비율</div>
+              <div class="integral-bar-shell"><div class="integral-bar-fill" id="analysisIntegralBar"></div></div>
+            </div>
+
+            <div class="analysis-actions">
+              <button id="exportSamplesCsv">샘플 CSV</button>
+              <button id="exportPassCsv">통과 요약 CSV</button>
+              <button id="exportAnalysisJson">분석 JSON</button>
+              <button id="clearAnalysisLog">기록 초기화</button>
+            </div>
+
+            <div class="preset-box">
+              <h3>실험 조건 프리셋</h3>
+              <div class="preset-input-row">
+                <input id="presetName" type="text" placeholder="예: 장반경 7000 km 실험" />
+                <button id="savePreset">현재 설정 저장</button>
+              </div>
+              <div class="preset-select-row">
+                <select id="presetList" aria-label="저장된 실험 조건 목록"></select>
+                <button id="loadPreset">불러오기</button>
+              </div>
+              <div class="preset-actions">
+                <button id="deletePreset">삭제</button>
+                <button id="exportPresets">설정 내보내기</button>
+                <button id="importPresets">설정 가져오기</button>
+              </div>
+              <input id="presetImportFile" type="file" accept="application/json,.json" hidden />
+            </div>
+
+            <div class="mini-note">
+              CSV는 엑셀, 구글 스프레드시트, 파이썬에서 열 수 있습니다. 실험 조건 프리셋은 브라우저에 저장되며, JSON으로 내보내 다른 기기에서도 불러올 수 있습니다.
+            </div>
+          </div>
+
+          <div class="analysis-card event-analysis-box">
+            <h3>관측 이벤트 직접 분석</h3>
+            <div class="event-select-row">
+              <select id="eventPassSelect" aria-label="분석할 관측 이벤트 선택"></select>
+              <button id="selectLatestPass">최신 통과</button>
+            </div>
+            <canvas id="eventSignalGraph" width="1200" height="520"></canvas>
+            <div class="event-analysis-actions">
+              <button id="analyzeSelectedPass">그래프 해설</button>
+              <button id="exportSelectedPassCsv">선택 통과 CSV</button>
+            </div>
+            <div class="event-analysis-text" id="eventAnalysisText">아직 분석할 관측 이벤트가 없습니다. 위성이 지평선 위로 한 번 지나가면, 그 구간의 순간 신호 세기 그래프와 해설이 여기에 표시됩니다.</div>
+          </div>
+        </div>
+
+        <div class="analysis-card auto-experiment-card">
+          <div class="auto-experiment-head">
+            <div>
+              <h3>자동 탐색 실험</h3>
+              <p>
+                장반경 a와 경사각 i의 여러 조합을 실제로 훑어보고, 누적 수신량 Q가 큰 조건을 자동 정렬합니다.
+                결과 행의 '보기' 버튼을 누르면 해당 조건이 시뮬레이터 본 화면에 적용되어 실제 통과 장면을 재생합니다.
+              </p>
+            </div>
+            <div class="auto-actions">
+              <button id="runAutoExperiment">자동 탐색 실행</button>
+              <button id="exportAutoExperimentCsv">탐색 결과 CSV</button>
+            </div>
+          </div>
+          <div class="auto-results-wrap">
+            <table class="auto-table">
+              <thead>
+                <tr>
+                  <th>조건</th>
+                  <th>의미</th>
+                  <th>a(km)</th>
+                  <th>i(°)</th>
+                  <th>관측시간(s)</th>
+                  <th>최대고도(°)</th>
+                  <th>최단거리(km)</th>
+                  <th>최대 S</th>
+                  <th>누적 Q</th>
+                  <th>평균 S</th>
+                  <th>시뮬레이션</th>
+                </tr>
+              </thead>
+              <tbody id="autoExperimentTableBody">
+                <tr><td colspan="11" style="text-align:left;">아직 자동 탐색을 실행하지 않았습니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="auto-summary" id="autoExperimentSummary">
+            자동 탐색을 실행하면 여러 궤도 조합의 비교 결과와 보고서용 해석 문장이 이곳에 표시됩니다.
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://esm.sh/three@0.160.0';
+    import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    const KM_TO_SCENE = 1 / 1800;
+    const EARTH_RADIUS_KM = 6371;
+    const MU = 398600.4418;
+    const C_KM_S = 299792.458;
+    const EARTH_ROT_RATE = 7.2921159e-5;
+    const DEG = Math.PI / 180;
+    const TWO_PI = Math.PI * 2;
+
+    const params = {
+      semiMajor: 7200,
+      eccentricity: 0.02,
+      inclination: 98,
+      raan: 35,
+      argPerigee: 40,
+      meanAnomaly: 285,
+      observerLat: 37.5,
+      observerLon: 127.0,
+      signalGain: 2.0,
+      carrierFreq: 137,
+      bandwidth: 120,
+      timeScale: 45,
+      cameraSpeed: 1.0,
+      manualTime: 0
+    };
+
+    let simTime = 0;
+    let running = true;
+    let lastFrame = performance.now();
+    let lastSignal = 0;
+    let lastSignalTime = 0;
+    let signalIntegral = 0;
+    let graphSamples = [];
+    let analysisSamples = [];
+    let passSummaries = [];
+    let activePass = null;
+    let autoExperimentResults = [];
+    let replayMode = null;
+    let lastAnalysisSampleTime = -Infinity;
+    const PRESET_STORAGE_KEY = 'satellite_orbit_simulator_experiment_presets_v1';
+    let cumulativeSpectrum = new Float32Array(512);
+    let orbitSignature = '';
+
+    const canvas = document.getElementById('scene');
+    const scene = new THREE.Scene();
+    scene.fog = null;
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1800);
+    camera.position.set(0, 5.2, 8.2);
+
+    const observerCanvas = document.getElementById('observerView');
+    const observerScene = new THREE.Scene();
+    const observerCamera = new THREE.PerspectiveCamera(50, observerCanvas.width / observerCanvas.height, 0.01, 100);
+    observerCamera.position.set(0, 2.0, 5.2);
+    observerCamera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const observerRenderer = new THREE.WebGLRenderer({ canvas: observerCanvas, antialias: true, alpha: true });
+    observerRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    observerRenderer.setSize(observerCanvas.clientWidth, observerCanvas.clientHeight, false);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 4;
+    controls.maxDistance = 820;
+
+    const pressedKeys = new Set();
+    window.addEventListener('keydown', event => {
+      if (event.target.closest?.('input, textarea, select, button')) return;
+      const key = event.key.toLowerCase();
+      if (['w', 'a', 's', 'd'].includes(key)) {
+        pressedKeys.add(key);
+        event.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', event => {
+      const key = event.key.toLowerCase();
+      if (['w', 'a', 's', 'd'].includes(key)) {
+        pressedKeys.delete(key);
+        event.preventDefault();
+      }
+    });
+    window.addEventListener('blur', () => pressedKeys.clear());
+
+    const observerControls = new OrbitControls(observerCamera, observerRenderer.domElement);
+    observerControls.enableDamping = true;
+    observerControls.dampingFactor = 0.06;
+    observerControls.minDistance = 2.4;
+    observerControls.maxDistance = 9;
+    observerControls.target.set(0, 0, 0);
+
+    scene.add(new THREE.AmbientLight(0x88aaff, 1.05));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.6);
+    sun.position.set(5, 4, 8);
+    scene.add(sun);
+
+    observerScene.add(new THREE.AmbientLight(0x88aaff, 1.4));
+    const observerLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    observerLight.position.set(3, 5, 4);
+    observerScene.add(observerLight);
+
+    const earthRadius = EARTH_RADIUS_KM * KM_TO_SCENE;
+    const earthGroup = new THREE.Group();
+    scene.add(earthGroup);
+
+    const earthTexture = createEarthTexture();
+    const earthBumpTexture = createEarthBumpTexture();
+    const earth = new THREE.Mesh(
+      new THREE.SphereGeometry(earthRadius, 128, 96),
+      new THREE.MeshPhongMaterial({
+        map: earthTexture,
+        bumpMap: earthBumpTexture,
+        bumpScale: 0.035,
+        shininess: 18,
+        emissive: 0x020914,
+        specular: 0x6aa8d8
+      })
+    );
+    earthGroup.add(earth);
+
+    const atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(earthRadius * 1.018, 128, 96),
+      new THREE.MeshBasicMaterial({ color: 0x73c7ff, transparent: true, opacity: 0.045, depthWrite: false })
+    );
+    earthGroup.add(atmosphere);
+
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x7fb8ff, transparent: true, opacity: 0.20 });
+    addLatitudeLongitudeLines();
+
+    const orbitLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x75d6ff, transparent: true, opacity: 0.75 }));
+    scene.add(orbitLine);
+
+    const groundTrackLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffcf70, transparent: true, opacity: 0.62 }));
+    scene.add(groundTrackLine);
+
+    const satellite = new THREE.Mesh(new THREE.SphereGeometry(0.075, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    scene.add(satellite);
+
+    const observer = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 32, 24),
+      new THREE.MeshStandardMaterial({ color: 0x9cffb0, emissive: 0x1cff77, emissiveIntensity: 0.8 })
+    );
+    scene.add(observer);
+
+    const lineOfSight = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9cffb0, transparent: true, opacity: 0.85 }));
+    scene.add(lineOfSight);
+
+    const horizonDisk = new THREE.Mesh(
+      new THREE.CircleGeometry(earthRadius * 0.7, 96),
+      new THREE.MeshBasicMaterial({ color: 0x9cffb0, transparent: true, opacity: 0.08, side: THREE.DoubleSide })
+    );
+    scene.add(horizonDisk);
+
+    const observerHorizon = new THREE.Mesh(
+      new THREE.CircleGeometry(2.2, 128),
+      new THREE.MeshBasicMaterial({ color: 0x1d4c55, transparent: true, opacity: 0.32, side: THREE.DoubleSide })
+    );
+    observerHorizon.rotation.x = -Math.PI / 2;
+    observerScene.add(observerHorizon);
+
+    const observerHorizonRing = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(makeCirclePoints(2.2, 160, 0)),
+      new THREE.LineBasicMaterial({ color: 0x9cffb0, transparent: true, opacity: 0.7 })
+    );
+    observerScene.add(observerHorizonRing);
+
+    const observerSkyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(2.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x75d6ff, transparent: true, opacity: 0.055, side: THREE.BackSide, depthWrite: false })
+    );
+    observerScene.add(observerSkyDome);
+
+    const observerSatellite = new THREE.Mesh(new THREE.SphereGeometry(0.075, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    observerScene.add(observerSatellite);
+
+    const observerSightLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x75d6ff, transparent: true, opacity: 0.9 }));
+    observerScene.add(observerSightLine);
+
+    const observerTrailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffcf70, transparent: true, opacity: 0.75 }));
+    observerScene.add(observerTrailLine);
+
+    observerScene.add(makeDirectionLine(0x9fb0d0, new THREE.Vector3(0, 0.02, -2.45)));
+    observerScene.add(makeDirectionLine(0x9fb0d0, new THREE.Vector3(2.45, 0.02, 0)));
+
+    addStars();
+    addObserverReferenceMarks();
+
+    const ui = bindControls();
+    setupButtons();
+    setupPanelControls();
+    rebuildOrbitVisuals();
+
+    function createEarthTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2048;
+      canvas.height = 1024;
+      const ctx = canvas.getContext('2d');
+
+      const ocean = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      ocean.addColorStop(0, '#0a315f');
+      ocean.addColorStop(0.5, '#0d4f90');
+      ocean.addColorStop(1, '#06264f');
+      ctx.fillStyle = ocean;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < canvas.height; y++) {
+        const lat = 90 - 180 * y / canvas.height;
+        const polar = Math.pow(Math.abs(lat) / 90, 2.4);
+        ctx.fillStyle = `rgba(220,240,255,${0.13 * polar})`;
+        ctx.fillRect(0, y, canvas.width, 1);
+      }
+
+      const continents = [
+        { lon: -100, lat: 45, sx: 210, sy: 135, color: '#3e7b4a' },
+        { lon: -60, lat: -15, sx: 130, sy: 210, color: '#3f7a44' },
+        { lon: 20, lat: 5, sx: 185, sy: 235, color: '#6f7d42' },
+        { lon: 75, lat: 48, sx: 310, sy: 145, color: '#4f8249' },
+        { lon: 105, lat: 20, sx: 175, sy: 150, color: '#547f43' },
+        { lon: 135, lat: -25, sx: 115, sy: 78, color: '#8a7848' },
+        { lon: -42, lat: 72, sx: 95, sy: 55, color: '#dce8e8' },
+        { lon: 0, lat: -82, sx: 900, sy: 42, color: '#eef6f8' }
+      ];
+
+      continents.forEach((c, idx) => drawContinentBlob(ctx, canvas, c, idx));
+
+      for (let i = 0; i < 900; i++) {
+        const x = pseudoRandom(i * 13.1) * canvas.width;
+        const y = pseudoRandom(i * 31.7 + 9) * canvas.height;
+        const latFactor = Math.cos((y / canvas.height - 0.5) * Math.PI);
+        const r = 8 + pseudoRandom(i * 7.7) * 38 * latFactor;
+        ctx.fillStyle = `rgba(255,255,255,${0.018 + pseudoRandom(i * 5.3) * 0.035})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r * 2.2, r * 0.45, pseudoRandom(i) * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.anisotropy = 8;
+      return texture;
+    }
+
+    function createEarthBumpTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#202020';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < 1800; i++) {
+        const x = pseudoRandom(i * 19.1) * canvas.width;
+        const y = pseudoRandom(i * 23.7) * canvas.height;
+        const r = 1 + pseudoRandom(i * 2.7) * 6;
+        const v = Math.floor(55 + pseudoRandom(i * 11.5) * 115);
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      return texture;
+    }
+
+    function drawContinentBlob(ctx, canvas, c, seed) {
+      const cx = ((c.lon + 180) / 360) * canvas.width;
+      const cy = ((90 - c.lat) / 180) * canvas.height;
+      const points = 34;
+
+      ctx.beginPath();
+      for (let i = 0; i <= points; i++) {
+        const a = Math.PI * 2 * i / points;
+        const rough = 0.62 + pseudoRandom(seed * 100 + i * 4.37) * 0.72;
+        const x = cx + Math.cos(a) * c.sx * rough;
+        const y = cy + Math.sin(a) * c.sy * rough;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = c.color;
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(230,210,150,0.18)';
+      for (let i = 0; i < 28; i++) {
+        const x = cx + (pseudoRandom(seed * 51 + i) - 0.5) * c.sx * 1.4;
+        const y = cy + (pseudoRandom(seed * 87 + i) - 0.5) * c.sy * 1.2;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 6 + pseudoRandom(i) * 18, 2 + pseudoRandom(i + 4) * 8, pseudoRandom(i + seed) * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function pseudoRandom(x) {
+      const s = Math.sin(x * 12.9898) * 43758.5453123;
+      return s - Math.floor(s);
+    }
+
+    function makeCirclePoints(radius, count, y) {
+      const pts = [];
+      for (let i = 0; i <= count; i++) {
+        const a = TWO_PI * i / count;
+        pts.push(new THREE.Vector3(radius * Math.cos(a), y, radius * Math.sin(a)));
+      }
+      return pts;
+    }
+
+    function makeDirectionLine(color, end) {
+      return new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.025, 0), end]),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.42 })
+      );
+    }
+
+    function makeTextSprite(text) {
+      const c = document.createElement('canvas');
+      c.width = 96;
+      c.height = 96;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'rgba(232,238,252,0.95)';
+      ctx.font = 'bold 52px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 48, 48);
+      const texture = new THREE.CanvasTexture(c);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+      sprite.scale.set(0.28, 0.28, 0.28);
+      return sprite;
+    }
+
+    function addObserverReferenceMarks() {
+      [['N', 0, -2.62], ['S', 0, 2.62], ['E', 2.62, 0], ['W', -2.62, 0]].forEach(([text, x, z]) => {
+        const sprite = makeTextSprite(text);
+        sprite.position.set(x, 0.08, z);
+        observerScene.add(sprite);
+      });
+
+      [30, 60].forEach(deg => {
+        const r = 2.2 * Math.cos(deg * DEG);
+        const y = 2.2 * Math.sin(deg * DEG);
+        const ring = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(makeCirclePoints(r, 128, y)),
+          new THREE.LineBasicMaterial({ color: 0x9fb0d0, transparent: true, opacity: 0.28 })
+        );
+        observerScene.add(ring);
+      });
+    }
+
+    function addStars() {
+      const geometry = new THREE.BufferGeometry();
+      const points = [];
+      for (let i = 0; i < 1200; i++) {
+        const r = 80 + Math.random() * 120;
+        const theta = Math.random() * TWO_PI;
+        const phi = Math.acos(2 * Math.random() - 1);
+        points.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+      }
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 0.04, transparent: true, opacity: 0.75 })));
+    }
+
+    function addLatitudeLongitudeLines() {
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const pts = [];
+        const latRad = lat * DEG;
+        for (let lon = 0; lon <= 360; lon += 4) pts.push(geoToVector(latRad, lon * DEG, EARTH_RADIUS_KM + 10).multiplyScalar(KM_TO_SCENE));
+        earthGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMaterial));
+      }
+      for (let lon = 0; lon < 360; lon += 30) {
+        const pts = [];
+        const lonRad = lon * DEG;
+        for (let lat = -90; lat <= 90; lat += 4) pts.push(geoToVector(lat * DEG, lonRad, EARTH_RADIUS_KM + 10).multiplyScalar(KM_TO_SCENE));
+        earthGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMaterial));
+      }
+    }
+
+    function geoToVector(latRad, lonRad, radiusKm) {
+      const cosLat = Math.cos(latRad);
+      return new THREE.Vector3(radiusKm * cosLat * Math.cos(lonRad), radiusKm * Math.sin(latRad), radiusKm * cosLat * Math.sin(lonRad));
+    }
+
+    function bindControls() {
+      const ids = Object.keys(params).filter(id => document.getElementById(id));
+      const elements = {};
+      ids.forEach(id => {
+        const input = document.getElementById(id);
+        const number = document.getElementById(`${id}Number`);
+        const value = document.getElementById(`${id}Value`);
+        elements[id] = { input, number, value };
+
+        const applyParamValue = rawValue => {
+          const min = Number(input.min);
+          const max = Number(input.max);
+          let nextValue = Number(rawValue);
+          if (!Number.isFinite(nextValue)) nextValue = params[id];
+          nextValue = Math.max(min, Math.min(max, nextValue));
+          params[id] = nextValue;
+          input.value = nextValue;
+          if (number) number.value = nextValue;
+
+          if (id === 'manualTime') {
+            simTime = params.manualTime;
+            resetIntegration(false);
+          }
+          if (['semiMajor','eccentricity','inclination','raan','argPerigee','meanAnomaly','observerLat','observerLon','signalGain','carrierFreq','bandwidth'].includes(id)) {
+            resetIntegration(true);
+            if (['semiMajor','eccentricity','inclination','raan','argPerigee','meanAnomaly'].includes(id)) { orbitSignature = ''; resetIntegration(true); }
+          }
+          updateLabels(elements);
+          rebuildOrbitVisuals();
+        };
+
+        input.addEventListener('input', () => applyParamValue(input.value));
+        if (number) {
+          number.addEventListener('change', () => applyParamValue(number.value));
+          number.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+              applyParamValue(number.value);
+              number.blur();
+            }
+          });
+        }
+      });
+      updateLabels(elements);
+      return elements;
+    }
+
+    function updateLabels(elements) {
+      Object.keys(elements).forEach(id => {
+        if (elements[id].number && document.activeElement !== elements[id].number) elements[id].number.value = params[id];
+      });
+      elements.semiMajor.value.textContent = `${params.semiMajor.toFixed(0)} km`;
+      elements.eccentricity.value.textContent = params.eccentricity.toFixed(2);
+      elements.inclination.value.textContent = `${params.inclination.toFixed(0)}°`;
+      elements.raan.value.textContent = `${params.raan.toFixed(0)}°`;
+      elements.argPerigee.value.textContent = `${params.argPerigee.toFixed(0)}°`;
+      elements.meanAnomaly.value.textContent = `${params.meanAnomaly.toFixed(0)}°`;
+      elements.observerLat.value.textContent = `${params.observerLat.toFixed(1)}°`;
+      elements.observerLon.value.textContent = `${params.observerLon.toFixed(1)}°`;
+      elements.signalGain.value.textContent = params.signalGain.toFixed(1);
+      elements.carrierFreq.value.textContent = `${params.carrierFreq.toFixed(0)} MHz`;
+      elements.bandwidth.value.textContent = `${params.bandwidth.toFixed(0)} kHz`;
+      elements.timeScale.value.textContent = `${params.timeScale.toFixed(params.timeScale < 100 ? 1 : 0)}×`;
+      elements.cameraSpeed.value.textContent = `${params.cameraSpeed.toFixed(1)}×`;
+      elements.manualTime.value.textContent = `${params.manualTime.toFixed(0)} s`;
+    }
+
+
+    function openAnalysisView() {
+      const view = document.getElementById('analysisView');
+      if (!view) return;
+      view.classList.remove('hidden-view');
+      updateAnalysisPanel();
+      updateEventAnalysisUI(true);
+      const canvas = document.getElementById('eventSignalGraph');
+      if (canvas) {
+        const data = getSelectedPassData();
+        const stats = data ? analyzeSelectedPassData(data.pass, data.samples) : null;
+        drawEventGraph(data?.samples, data?.pass, stats);
+      }
+    }
+
+    function closeAnalysisView() {
+      const view = document.getElementById('analysisView');
+      if (!view) return;
+      view.classList.add('hidden-view');
+    }
+
+    function setupPanelControls() {
+      const panels = Array.from(document.querySelectorAll('.panel:not(.panel-dock)'));
+      const dockButtons = Array.from(document.querySelectorAll('.dock-btn[data-target]'));
+      let activePanel = null;
+      let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+      panels.forEach(panel => {
+        const handle = panel.querySelector('.drag-handle') || panel;
+        handle.addEventListener('pointerdown', event => {
+          if (event.target.closest('button, input, label, canvas')) return;
+          activePanel = panel;
+          const rect = panel.getBoundingClientRect();
+          startX = event.clientX;
+          startY = event.clientY;
+          startLeft = rect.left;
+          startTop = rect.top;
+          panel.style.left = `${rect.left}px`;
+          panel.style.top = `${rect.top}px`;
+          panel.style.right = 'auto';
+          panel.style.bottom = 'auto';
+          panel.style.width = `${rect.width}px`;
+          panel.style.height = `${rect.height}px`;
+          panel.classList.add('dragging');
+          panel.setPointerCapture(event.pointerId);
+        });
+
+        panel.addEventListener('pointermove', event => {
+          if (!activePanel || activePanel !== panel) return;
+          const dx = event.clientX - startX;
+          const dy = event.clientY - startY;
+          const rect = panel.getBoundingClientRect();
+          const margin = 8;
+          const nextLeft = Math.max(margin, Math.min(window.innerWidth - rect.width - margin, startLeft + dx));
+          const nextTop = Math.max(margin, Math.min(window.innerHeight - 48, startTop + dy));
+          panel.style.left = `${nextLeft}px`;
+          panel.style.top = `${nextTop}px`;
+        });
+
+        panel.addEventListener('pointerup', event => {
+          if (!activePanel || activePanel !== panel) return;
+          panel.classList.remove('dragging');
+          try { panel.releasePointerCapture(event.pointerId); } catch (_) {}
+          activePanel = null;
+        });
+
+        new ResizeObserver(() => resizeObserverRendererIfNeeded()).observe(panel);
+      });
+
+      document.querySelectorAll('[data-close]').forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          const panel = document.getElementById(button.dataset.close);
+          if (!panel) return;
+          panel.classList.add('collapsed');
+          updateDockState();
+        });
+      });
+
+      dockButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          const panel = document.getElementById(button.dataset.target);
+          if (!panel) return;
+          panel.classList.toggle('collapsed');
+          if (!panel.classList.contains('collapsed')) bringPanelToFront(panel);
+          updateDockState();
+        });
+      });
+
+      panels.forEach(panel => panel.addEventListener('pointerdown', () => bringPanelToFront(panel)));
+
+      function bringPanelToFront(panel) {
+        panels.forEach(p => p.style.zIndex = '10');
+        panel.style.zIndex = '25';
+      }
+
+      function updateDockState() {
+        dockButtons.forEach(button => {
+          const panel = document.getElementById(button.dataset.target);
+          button.classList.toggle('hidden-panel', panel?.classList.contains('collapsed'));
+        });
+      }
+
+      updateDockState();
+    }
+
+    function setupButtons() {
+      document.getElementById('playPause').addEventListener('click', () => {
+        running = !running;
+        document.getElementById('playPause').textContent = running ? '일시정지' : '재생';
+      });
+
+      document.getElementById('reset').addEventListener('click', () => {
+        simTime = 0;
+        params.manualTime = 0;
+        ui.manualTime.input.value = 0;
+        resetIntegration(true);
+        updateLabels(ui);
+      });
+
+      document.getElementById('presetLEO').addEventListener('click', () => {
+        Object.assign(params, {
+          semiMajor: 7071,
+          eccentricity: 0.001,
+          inclination: 97,
+          raan: 40,
+          argPerigee: 0,
+          meanAnomaly: 285,
+          observerLat: 37.5,
+          observerLon: 127.0,
+          signalGain: 2.0,
+          carrierFreq: 137,
+          bandwidth: 120,
+          timeScale: 60,
+          cameraSpeed: 1.0
+        });
+        for (const [key, item] of Object.entries(ui)) item.input.value = params[key];
+        orbitSignature = '';
+        resetIntegration(true);
+        updateLabels(ui);
+        rebuildOrbitVisuals();
+      });
+
+      document.getElementById('exportSamplesCsv').addEventListener('click', () => exportSamplesCsv());
+      document.getElementById('exportPassCsv').addEventListener('click', () => exportPassCsv());
+      document.getElementById('exportAnalysisJson').addEventListener('click', () => exportAnalysisJson());
+      document.getElementById('clearAnalysisLog').addEventListener('click', () => clearAnalysisLog());
+      document.getElementById('savePreset').addEventListener('click', () => saveCurrentPreset());
+      document.getElementById('loadPreset').addEventListener('click', () => loadSelectedPreset());
+      document.getElementById('deletePreset').addEventListener('click', () => deleteSelectedPreset());
+      document.getElementById('exportPresets').addEventListener('click', () => exportPresets());
+      document.getElementById('importPresets').addEventListener('click', () => document.getElementById('presetImportFile').click());
+
+      document.getElementById('presetImportFile').addEventListener('change', event => importPresetsFromFile(event));
+      document.getElementById('openAnalysisView').addEventListener('click', () => openAnalysisView());
+      document.getElementById('closeAnalysisView').addEventListener('click', () => closeAnalysisView());
+      document.getElementById('eventPassSelect').addEventListener('change', () => updateEventAnalysisUI());
+      document.getElementById('selectLatestPass').addEventListener('click', () => selectLatestPass());
+      document.getElementById('analyzeSelectedPass').addEventListener('click', () => updateEventAnalysisUI(true));
+      document.getElementById('exportSelectedPassCsv').addEventListener('click', () => exportSelectedPassCsv());
+      document.getElementById('runAutoExperiment').addEventListener('click', () => runAutoExperiment());
+      document.getElementById('exportAutoExperimentCsv').addEventListener('click', () => exportAutoExperimentCsv());
+      refreshPresetList();
+      updateEventAnalysisUI();
+    }
+
+    function resetIntegration(clearSpectrum) {
+      signalIntegral = 0;
+      lastSignal = 0;
+      lastSignalTime = simTime;
+      graphSamples = [];
+      if (clearSpectrum) {
+        cumulativeSpectrum = new Float32Array(512);
+        clearAnalysisLog(false);
+      }
+    }
+
+
+
+    function clearAnalysisLog(showAlert = true) {
+      analysisSamples = [];
+      passSummaries = [];
+      activePass = null;
+      lastAnalysisSampleTime = -Infinity;
+      updateAnalysisPanel();
+      if (showAlert) window.alert('수신량 분석 기록을 초기화했습니다.');
+    }
+
+    function recordAnalysisSample(t, sat, topo, signal, signalRate, rangeRate, dopplerHz, fObserved) {
+      if (!running) return;
+      if (t - lastAnalysisSampleTime < 1) return;
+      lastAnalysisSampleTime = t;
+
+      const visible = topo.elevation > 0;
+      const row = {
+        time_s: Number(t.toFixed(2)),
+        signal: Number(signal.toFixed(6)),
+        signal_rate_per_s: Number(signalRate.toFixed(7)),
+        cumulative_q: Number(signalIntegral.toFixed(6)),
+        elevation_deg: Number((topo.elevation / DEG).toFixed(4)),
+        azimuth_deg: Number((topo.azimuth / DEG).toFixed(4)),
+        range_km: Number(topo.range.toFixed(3)),
+        range_rate_km_s: Number(rangeRate.toFixed(6)),
+        doppler_hz: Number(dopplerHz.toFixed(3)),
+        observed_freq_mhz: Number(fObserved.toFixed(9)),
+        altitude_km: Number((sat.radiusKm - EARTH_RADIUS_KM).toFixed(3)),
+        visible: visible ? 1 : 0
+      };
+      analysisSamples.push(row);
+      if (analysisSamples.length > 20000) analysisSamples.shift();
+
+      if (visible && !activePass) {
+        activePass = {
+          start_s: t,
+          end_s: t,
+          duration_s: 0,
+          q_start: signalIntegral,
+          q_end: signalIntegral,
+          q_added: 0,
+          max_signal: signal,
+          max_signal_time_s: t,
+          max_elevation_deg: topo.elevation / DEG,
+          min_range_km: topo.range,
+          sample_count: 1
+        };
+      } else if (visible && activePass) {
+        activePass.end_s = t;
+        activePass.duration_s = activePass.end_s - activePass.start_s;
+        activePass.q_end = signalIntegral;
+        activePass.q_added = activePass.q_end - activePass.q_start;
+        activePass.sample_count += 1;
+        if (signal > activePass.max_signal) {
+          activePass.max_signal = signal;
+          activePass.max_signal_time_s = t;
+        }
+        activePass.max_elevation_deg = Math.max(activePass.max_elevation_deg, topo.elevation / DEG);
+        activePass.min_range_km = Math.min(activePass.min_range_km, topo.range);
+      } else if (!visible && activePass) {
+        if (activePass.duration_s > 0) {
+          passSummaries.push(roundPassSummary(activePass));
+        }
+        activePass = null;
+      }
+
+      updateAnalysisPanel();
+    }
+
+    function roundPassSummary(pass) {
+      return {
+        start_s: Number(pass.start_s.toFixed(2)),
+        end_s: Number(pass.end_s.toFixed(2)),
+        duration_s: Number(pass.duration_s.toFixed(2)),
+        q_added: Number(pass.q_added.toFixed(6)),
+        max_signal: Number(pass.max_signal.toFixed(6)),
+        max_signal_time_s: Number(pass.max_signal_time_s.toFixed(2)),
+        max_elevation_deg: Number(pass.max_elevation_deg.toFixed(3)),
+        min_range_km: Number(pass.min_range_km.toFixed(3)),
+        sample_count: pass.sample_count
+      };
+    }
+
+    function getCurrentAnalysisSummary() {
+      const visibleRows = analysisSamples.filter(row => row.visible === 1);
+      const maxSignal = analysisSamples.reduce((m, row) => Math.max(m, row.signal), 0);
+      const maxElevation = analysisSamples.length ? Math.max(...analysisSamples.map(row => row.elevation_deg)) : null;
+      const minRange = analysisSamples.length ? Math.min(...analysisSamples.map(row => row.range_km)) : null;
+      const visibleTime = visibleRows.length;
+      const passes = activePass ? [...passSummaries, roundPassSummary(activePass)] : [...passSummaries];
+      const graphStats = graphWindowIntegralStats(orbitalPeriod());
+      return {
+        sample_count: analysisSamples.length,
+        visible_time_s_approx: visibleTime,
+        max_signal: maxSignal,
+        max_elevation_deg: maxElevation,
+        min_range_km: minRange,
+        total_q: signalIntegral,
+        window_q: graphStats.area,
+        avg_signal: graphStats.avgSignal,
+        integral_fill_ratio: graphStats.fillRatio,
+        pass_count: passes.length,
+        passes
+      };
+    }
+
+    function updateAnalysisPanel() {
+      const summary = getCurrentAnalysisSummary();
+      document.getElementById('analysisSamples').textContent = `${summary.sample_count}`;
+      document.getElementById('analysisVisibleTime').textContent = `${summary.visible_time_s_approx.toFixed(0)} s`;
+      document.getElementById('analysisMaxSignal').textContent = summary.max_signal.toFixed(4);
+      document.getElementById('analysisMaxElevation').textContent = summary.max_elevation_deg === null ? '-' : `${summary.max_elevation_deg.toFixed(1)}°`;
+      document.getElementById('analysisMinRange').textContent = summary.min_range_km === null ? '-' : `${summary.min_range_km.toFixed(0)} km`;
+      document.getElementById('analysisTotalQ').textContent = summary.total_q.toFixed(2);
+      document.getElementById('analysisWindowQ').textContent = summary.window_q.toFixed(2);
+      document.getElementById('analysisAvgSignal').textContent = summary.avg_signal.toFixed(4);
+      const integralBar = document.getElementById('analysisIntegralBar');
+      if (integralBar) integralBar.style.width = `${Math.round(summary.integral_fill_ratio * 100)}%`;
+      document.getElementById('analysisPassCount').textContent = `${summary.pass_count}`;
+      updateEventAnalysisUI();
+    }
+
+
+    function getAllPasses() {
+      const passes = [...passSummaries];
+      if (activePass && activePass.duration_s > 0) passes.push(roundPassSummary(activePass));
+      return passes;
+    }
+
+    function refreshEventPassSelect() {
+      const select = document.getElementById('eventPassSelect');
+      if (!select) return;
+      const passes = getAllPasses();
+      const previous = select.value;
+      select.innerHTML = '';
+      if (!passes.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '관측 이벤트 없음';
+        select.appendChild(option);
+        return;
+      }
+      passes.forEach((pass, idx) => {
+        const option = document.createElement('option');
+        option.value = String(idx);
+        option.textContent = `${idx + 1}회차 · ${pass.start_s.toFixed(0)}~${pass.end_s.toFixed(0)} s · ${pass.duration_s.toFixed(0)} s`;
+        select.appendChild(option);
+      });
+      const validPrevious = passes[Number(previous)] ? previous : String(passes.length - 1);
+      select.value = validPrevious;
+    }
+
+    function selectLatestPass() {
+      refreshEventPassSelect();
+      const select = document.getElementById('eventPassSelect');
+      if (!select || !select.options.length) return;
+      select.value = String(Math.max(0, select.options.length - 1));
+      updateEventAnalysisUI(true);
+    }
+
+    function getSelectedPassData() {
+      refreshEventPassSelect();
+      const passes = getAllPasses();
+      const select = document.getElementById('eventPassSelect');
+      const idx = select ? Number(select.value) : passes.length - 1;
+      const pass = passes[idx];
+      if (!pass) return null;
+      const samples = analysisSamples.filter(row => row.visible === 1 && row.time_s >= pass.start_s && row.time_s <= pass.end_s);
+      return { pass, samples, index: idx };
+    }
+
+    function trapezoidAreaFromRows(rows) {
+      if (!rows || rows.length < 2) return 0;
+      let area = 0;
+      for (let i = 1; i < rows.length; i++) {
+        const dt = rows[i].time_s - rows[i - 1].time_s;
+        if (dt > 0 && dt < 120) area += (rows[i - 1].signal + rows[i].signal) * 0.5 * dt;
+      }
+      return area;
+    }
+
+    function analyzeSelectedPassData(pass, rows) {
+      if (!pass || !rows || rows.length < 2) return null;
+      let peakIndex = 0;
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i].signal > rows[peakIndex].signal) peakIndex = i;
+      }
+      const area = trapezoidAreaFromRows(rows);
+      const duration = Math.max(0, pass.duration_s);
+      const avgSignal = duration > 0 ? area / duration : 0;
+      const startSignal = rows[0].signal;
+      const endSignal = rows[rows.length - 1].signal;
+      const peakRow = rows[peakIndex];
+      const riseDuration = Math.max(0, peakRow.time_s - rows[0].time_s);
+      const fallDuration = Math.max(0, rows[rows.length - 1].time_s - peakRow.time_s);
+      const riseSlope = riseDuration > 0 ? (peakRow.signal - startSignal) / riseDuration : 0;
+      const fallSlope = fallDuration > 0 ? (endSignal - peakRow.signal) / fallDuration : 0;
+      const symmetryRatio = fallDuration > 0 ? riseDuration / fallDuration : Infinity;
+      const maxElevation = Math.max(...rows.map(r => r.elevation_deg));
+      const minRange = Math.min(...rows.map(r => r.range_km));
+      const signalStd = (() => {
+        const mean = rows.reduce((s, r) => s + r.signal, 0) / rows.length;
+        const variance = rows.reduce((s, r) => s + (r.signal - mean) ** 2, 0) / rows.length;
+        return Math.sqrt(variance);
+      })();
+      return {
+        area,
+        duration,
+        avgSignal,
+        peakRow,
+        riseDuration,
+        fallDuration,
+        riseSlope,
+        fallSlope,
+        symmetryRatio,
+        maxElevation,
+        minRange,
+        startSignal,
+        endSignal,
+        signalStd
+      };
+    }
+
+    function interpretPassAnalysis(pass, rows, stats) {
+      if (!pass || !rows || !stats) {
+        return '아직 분석할 관측 이벤트가 없습니다. 위성이 지평선 위로 한 번 지나가면, 그 구간의 순간 신호 세기 그래프와 해설이 여기에 표시됩니다.';
+      }
+      const passType = stats.maxElevation >= 80 ? '거의 머리 위를 지나는 매우 높은 통과' : stats.maxElevation >= 45 ? '비교적 높은 통과' : '낮은 고도각의 통과';
+      const symmetryText = stats.symmetryRatio > 1.25 ? '상승 구간이 하강 구간보다 더 길어, 천천히 강해졌다가 비교적 빠르게 약해진 형태입니다.' : stats.symmetryRatio < 0.8 ? '상승 구간보다 하강 구간이 더 길어, 빠르게 강해진 뒤 천천히 약해진 형태입니다.' : '상승 구간과 하강 구간 길이가 비슷하여 비교적 대칭적인 종 모양 그래프에 가깝습니다.';
+      const spreadText = stats.signalStd > stats.avgSignal * 0.8 ? '신호의 변동 폭이 커서 특정 시점 부근에 신호가 집중되어 있습니다.' : '신호의 변동 폭이 비교적 완만하여 통과 전반에 걸쳐 고르게 분포합니다.';
+      return [
+        `이 관측 이벤트는 ${passType}입니다. 총 관측 시간은 약 ${stats.duration.toFixed(1)}초이고, 그래프 아래 면적(적분값)인 누적 수신량은 Q ≈ ${stats.area.toFixed(2)}입니다.`,
+        `순간 신호 세기 S(t)는 시작 시 ${stats.startSignal.toFixed(4)}에서 증가하여 t ≈ ${stats.peakRow.time_s.toFixed(1)}초에서 최대 ${stats.peakRow.signal.toFixed(4)}를 기록한 뒤 다시 감소합니다. 따라서 최대점 이전에는 대체로 S′(t) > 0, 최대점 이후에는 S′(t) < 0 로 해석할 수 있습니다.`,
+        `최대 고도각은 ${stats.maxElevation.toFixed(1)}°, 최소 거리는 약 ${stats.minRange.toFixed(0)} km이며, 평균 신호 세기는 ${stats.avgSignal.toFixed(4)}입니다. ${symmetryText} ${spreadText}`,
+        `즉 이 그래프는 “신호의 높이” 자체보다도 “그래프 아래 면적”이 중요하다는 점을 보여 줍니다. 최대 신호가 다소 높지 않더라도 지속 시간이 길면 Q가 커질 수 있고, 반대로 매우 강한 신호라도 짧게 지나가면 적분값은 크게 늘지 않을 수 있습니다.`
+      ].join('\n\n');
+    }
+
+    function drawEventGraph(rows, pass, stats) {
+      const canvas = document.getElementById('eventSignalGraph');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const pr = Math.min(devicePixelRatio, 2);
+      const w = canvas.width = canvas.clientWidth * pr;
+      const h = canvas.height = canvas.clientHeight * pr;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(2, 5, 12, 0.2)';
+      ctx.fillRect(0, 0, w, h);
+      const padL = 58, padR = 24, padT = 26, padB = 46;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      const baseY = padT + plotH;
+
+      if (!rows || rows.length < 2 || !pass || !stats) {
+        ctx.fillStyle = 'rgba(232, 238, 252, 0.75)';
+        ctx.font = `${16 * pr}px system-ui`;
+        ctx.fillText('관측 이벤트가 아직 없습니다.', 18 * pr, 28 * pr);
+        return;
+      }
+
+      const minT = pass.start_s;
+      const maxT = pass.end_s;
+      const maxSignal = Math.max(0.05, ...rows.map(r => r.signal));
+      const xFor = t => padL + ((t - minT) / Math.max(1e-9, (maxT - minT))) * plotW;
+      const yFor = s => padT + plotH - (s / maxSignal) * plotH;
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) { const y = padT + plotH * i / 5; ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); }
+      for (let i = 0; i <= 6; i++) { const x = padL + plotW * i / 6; ctx.moveTo(x, padT); ctx.lineTo(x, baseY); }
+      ctx.stroke();
+
+      const gradient = ctx.createLinearGradient(0, padT, 0, baseY);
+      gradient.addColorStop(0, 'rgba(255, 207, 112, 0.34)');
+      gradient.addColorStop(1, 'rgba(117, 214, 255, 0.08)');
+      ctx.beginPath();
+      rows.forEach((row, idx) => {
+        const x = xFor(row.time_s), y = yFor(row.signal);
+        if (idx === 0) ctx.moveTo(x, baseY), ctx.lineTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(xFor(rows[rows.length - 1].time_s), baseY);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.beginPath();
+      rows.forEach((row, idx) => {
+        const x = xFor(row.time_s), y = yFor(row.signal);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = '#75d6ff';
+      ctx.lineWidth = 2.8;
+      ctx.stroke();
+
+      const peakX = xFor(stats.peakRow.time_s);
+      const peakY = yFor(stats.peakRow.signal);
+      ctx.beginPath();
+      ctx.moveTo(peakX, padT);
+      ctx.lineTo(peakX, baseY);
+      ctx.strokeStyle = 'rgba(255, 207, 112, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(peakX, peakY, 4 * pr, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffcf70';
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(232, 238, 252, 0.9)';
+      ctx.font = `${17 * pr}px system-ui`;
+      ctx.fillText('선택한 관측 이벤트의 S(t)', 14 * pr, 22 * pr);
+      ctx.font = `${13 * pr}px system-ui`;
+      ctx.fillStyle = 'rgba(255, 232, 173, 0.95)';
+      ctx.fillText(`Q ≈ ${stats.area.toFixed(2)}`, 14 * pr, 44 * pr);
+      ctx.fillText(`최대 S ≈ ${stats.peakRow.signal.toFixed(4)}`, 14 * pr, 63 * pr);
+      ctx.fillStyle = 'rgba(159, 176, 208, 0.95)';
+      ctx.fillText(`${minT.toFixed(0)} s`, padL, h - 14 * pr);
+      ctx.fillText(`${maxT.toFixed(0)} s`, w - 72 * pr, h - 14 * pr);
+      ctx.fillText(`피크 시각 ${stats.peakRow.time_s.toFixed(1)} s`, Math.max(14 * pr, peakX - 40 * pr), Math.max(18 * pr, peakY - 12 * pr));
+    }
+
+    function updateEventAnalysisUI(forceSelectLatest = false) {
+      refreshEventPassSelect();
+      const select = document.getElementById('eventPassSelect');
+      if (forceSelectLatest && select && select.options.length && select.value !== '') {
+        select.value = String(Math.max(0, select.options.length - 1));
+      }
+      const data = getSelectedPassData();
+      const textEl = document.getElementById('eventAnalysisText');
+      if (!data) {
+        drawEventGraph(null, null, null);
+        if (textEl) textEl.textContent = '아직 분석할 관측 이벤트가 없습니다. 위성이 지평선 위로 한 번 지나가면, 그 구간의 순간 신호 세기 그래프와 해설이 여기에 표시됩니다.';
+        return;
+      }
+      const stats = analyzeSelectedPassData(data.pass, data.samples);
+      drawEventGraph(data.samples, data.pass, stats);
+      if (textEl) textEl.textContent = interpretPassAnalysis(data.pass, data.samples, stats);
+    }
+
+    function exportSelectedPassCsv() {
+      const data = getSelectedPassData();
+      if (!data || !data.samples.length) {
+        window.alert('내보낼 관측 이벤트가 아직 없습니다. 위성이 지평선 위로 통과한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      downloadText(`satellite_selected_pass_${data.index + 1}_${Math.round(data.pass.start_s)}s_${Math.round(data.pass.end_s)}s.csv`, toCsv(data.samples), 'text/csv;charset=utf-8');
+    }
+
+
+    function formatNumber(value, digits = 2, fallback = '-') {
+      return Number.isFinite(value) ? Number(value).toFixed(digits) : fallback;
+    }
+
+    function withTemporaryParams(nextParams, callback) {
+      const backup = { ...params };
+      Object.assign(params, nextParams);
+      try {
+        return callback();
+      } finally {
+        Object.assign(params, backup);
+      }
+    }
+
+    function simulateRepresentativePass(condition) {
+      const scanStep = 10;
+      return withTemporaryParams(condition.params, () => {
+        const period = orbitalPeriod();
+        const scanEnd = Math.max(period * 3, 18000);
+        const passes = [];
+        let current = null;
+
+        for (let t = 0; t <= scanEnd; t += scanStep) {
+          const sat = satelliteStateAt(t);
+          const obs = observerState(t);
+          const topo = topocentric(sat.positionKm, obs);
+          const signal = signalStrength(topo.elevation, topo.range);
+          const visible = topo.elevation > 0;
+
+          if (visible && !current) {
+            current = {
+              start_s: t,
+              end_s: t,
+              samples: []
+            };
+          }
+
+          if (visible && current) {
+            current.end_s = t;
+            current.samples.push({
+              time_s: Number(t.toFixed(2)),
+              signal,
+              elevation_deg: topo.elevation / DEG,
+              range_km: topo.range
+            });
+          }
+
+          if ((!visible || t >= scanEnd) && current) {
+            if (current.samples.length >= 2) {
+              passes.push(current);
+            }
+            current = null;
+          }
+        }
+
+        if (!passes.length) {
+          return {
+            condition: condition.key,
+            meaning: condition.meaning,
+            search_type: condition.search_type || 'fixed',
+            semi_major_km: condition.params.semiMajor,
+            inclination_deg: condition.params.inclination,
+            duration_s: 0,
+            max_elevation_deg: null,
+            min_range_km: null,
+            max_signal: 0,
+            q: 0,
+            avg_signal: 0,
+            pass_start_s: 0,
+            pass_end_s: 0,
+            replay_start_s: 0,
+            replay_end_s: 600,
+            params_snapshot: { ...condition.params },
+            note: '관측 이벤트 없음'
+          };
+        }
+
+        const summarized = passes.map(pass => {
+          const rows = pass.samples;
+          const q = trapezoidAreaFromRows(rows);
+          const duration = Math.max(0, pass.end_s - pass.start_s);
+          const maxSignal = Math.max(...rows.map(row => row.signal));
+          const maxElevation = Math.max(...rows.map(row => row.elevation_deg));
+          const minRange = Math.min(...rows.map(row => row.range_km));
+          const avgSignal = duration > 0 ? q / duration : 0;
+          return {
+            condition: condition.key,
+            meaning: condition.meaning,
+            search_type: condition.search_type || 'fixed',
+            semi_major_km: condition.params.semiMajor,
+            inclination_deg: condition.params.inclination,
+            duration_s: Number(duration.toFixed(2)),
+            max_elevation_deg: Number(maxElevation.toFixed(3)),
+            min_range_km: Number(minRange.toFixed(3)),
+            max_signal: Number(maxSignal.toFixed(6)),
+            q: Number(q.toFixed(6)),
+            avg_signal: Number(avgSignal.toFixed(6)),
+            pass_start_s: Number(pass.start_s.toFixed(2)),
+            pass_end_s: Number(pass.end_s.toFixed(2)),
+            replay_start_s: Number(Math.max(0, pass.start_s - 90).toFixed(2)),
+            replay_end_s: Number((pass.end_s + 90).toFixed(2)),
+            params_snapshot: { ...condition.params },
+            note: '대표 통과'
+          };
+        });
+
+        summarized.sort((a, b) => b.q - a.q);
+        return summarized[0];
+      });
+    }
+
+    function getAutoExperimentConditions() {
+      const base = {
+        eccentricity: 0.001,
+        raan: 40,
+        argPerigee: 0,
+        meanAnomaly: 285,
+        observerLat: 37.5,
+        observerLon: 127.0,
+        signalGain: 2.0,
+        carrierFreq: 137,
+        bandwidth: 120,
+        timeScale: params.timeScale,
+        cameraSpeed: params.cameraSpeed,
+        manualTime: 0
+      };
+
+      const semiMajorValues = [6800, 7000, 7200, 7600, 8000, 8500, 9000];
+      const inclinationValues = [0, 20, 37.5, 55, 75, 98, 110];
+      const conditions = [];
+
+      semiMajorValues.forEach(a => {
+        inclinationValues.forEach(i => {
+          conditions.push({
+            key: `탐색 ${conditions.length + 1}`,
+            meaning: `a=${a} km, i=${i}°`,
+            params: { ...base, semiMajor: a, inclination: i },
+            search_type: 'grid'
+          });
+        });
+      });
+
+      [
+        { key: '기준-적도', meaning: '적도 궤도 기준', params: { ...base, semiMajor: 7200, inclination: 0 }, search_type: 'reference' },
+        { key: '기준-한국위도', meaning: '대한민국 위도형 기준', params: { ...base, semiMajor: 7200, inclination: 37.5 }, search_type: 'reference' },
+        { key: '기준-NOAA형', meaning: 'NOAA형 극궤도 기준', params: { ...base, semiMajor: 7200, inclination: 98 }, search_type: 'reference' }
+      ].forEach(condition => conditions.push(condition));
+
+      return conditions;
+    }
+
+    function runAutoExperiment() {
+      const button = document.getElementById('runAutoExperiment');
+      if (button) {
+        button.disabled = true;
+        button.textContent = '탐색 중...';
+      }
+
+      setTimeout(() => {
+        try {
+          const allResults = getAutoExperimentConditions().map(condition => simulateRepresentativePass(condition));
+          autoExperimentResults = rankAutoExperimentResults(allResults);
+          renderAutoExperimentResults();
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = '자동 탐색 실행';
+          }
+        }
+      }, 30);
+    }
+
+    function rankAutoExperimentResults(rows) {
+      const valid = rows.filter(row => row.q > 0).sort((a, b) => b.q - a.q);
+      const invalid = rows.filter(row => row.q <= 0);
+      const topGrid = valid.filter(row => row.search_type !== 'reference').slice(0, 10);
+      const references = valid.filter(row => row.search_type === 'reference');
+      const missingReferences = rows.filter(row => row.search_type === 'reference' && row.q <= 0);
+      return [...topGrid, ...references, ...missingReferences, ...invalid.slice(0, 3)];
+    }
+
+    function renderAutoExperimentResults() {
+      const tbody = document.getElementById('autoExperimentTableBody');
+      if (!tbody) return;
+      if (!autoExperimentResults.length) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:left;">아직 자동 탐색을 실행하지 않았습니다.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = autoExperimentResults.map((row, idx) => `
+        <tr>
+          <td>${row.search_type === 'reference' ? row.condition : `${idx + 1}위`}</td>
+          <td>${row.meaning}</td>
+          <td>${formatNumber(row.semi_major_km, 0)}</td>
+          <td>${formatNumber(row.inclination_deg, 1)}</td>
+          <td>${formatNumber(row.duration_s, 0)}</td>
+          <td>${formatNumber(row.max_elevation_deg, 1)}</td>
+          <td>${formatNumber(row.min_range_km, 0)}</td>
+          <td>${formatNumber(row.max_signal, 4)}</td>
+          <td>${formatNumber(row.q, 2)}</td>
+          <td>${formatNumber(row.avg_signal, 4)}</td>
+          <td><button class="auto-view-btn" data-auto-result="${idx}">보기</button></td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('[data-auto-result]').forEach(button => {
+        button.addEventListener('click', () => startSimulationFromAutoResult(Number(button.dataset.autoResult)));
+      });
+
+      const summaryEl = document.getElementById('autoExperimentSummary');
+      if (summaryEl) summaryEl.textContent = buildAutoExperimentSummary(autoExperimentResults);
+    }
+
+    function buildAutoExperimentSummary(rows) {
+      if (!rows.length) return '자동 탐색 결과가 없습니다.';
+      const valid = rows.filter(row => row.q > 0);
+      if (!valid.length) return '모든 조건에서 관측 이벤트가 감지되지 않았습니다. 초기 평균근점이각 M₀ 또는 승교점 Ω을 조정해야 합니다.';
+
+      const ranked = [...valid].sort((a, b) => b.q - a.q);
+      const bestQ = ranked[0];
+      const bestPeak = [...valid].sort((a, b) => b.max_signal - a.max_signal)[0];
+      const bestDuration = [...valid].sort((a, b) => b.duration_s - a.duration_s)[0];
+
+      const topThree = ranked.slice(0, 3)
+        .map((row, idx) => `${idx + 1}위: a=${row.semi_major_km.toFixed(0)} km, i=${row.inclination_deg.toFixed(1)}°, Q≈${row.q.toFixed(2)}`)
+        .join('\n');
+
+      const referenceRows = valid.filter(row => row.search_type === 'reference');
+      const referenceText = referenceRows.length
+        ? referenceRows.map(row => `${row.condition}: Q≈${row.q.toFixed(2)}, 최대고도≈${row.max_elevation_deg.toFixed(1)}°`).join('\n')
+        : '기준 조건에서 관측 이벤트가 감지되지 않았습니다.';
+
+      const lines = [];
+      lines.push(`자동 탐색은 장반경 a 7개 값과 경사각 i 7개 값을 조합한 격자 조건을 실제로 계산한 뒤, 누적 수신량 Q가 큰 조건을 정렬한 것입니다.`);
+      lines.push(`탐색 결과 상위 조건:\n${topThree}`);
+      lines.push(`가장 큰 Q 조건은 a=${bestQ.semi_major_km.toFixed(0)} km, i=${bestQ.inclination_deg.toFixed(1)}°입니다. Q≈${bestQ.q.toFixed(2)}, 관측 가능 시간≈${bestQ.duration_s.toFixed(0)}초입니다.`);
+      lines.push(`최대 순간 신호가 가장 큰 조건은 a=${bestPeak.semi_major_km.toFixed(0)} km, i=${bestPeak.inclination_deg.toFixed(1)}°이며, 가장 오래 보인 조건은 a=${bestDuration.semi_major_km.toFixed(0)} km, i=${bestDuration.inclination_deg.toFixed(1)}°입니다.`);
+      lines.push(`기준 조건 비교:\n${referenceText}`);
+      lines.push(`각 행의 '보기' 버튼을 누르면 계산 결과가 본 시뮬레이터에 적용되어 실제 통과 장면을 카메라와 함께 재생합니다.`);
+      return lines.join('\n\n');
+    }
+
+    function applyParamsToUi(nextParams) {
+      Object.assign(params, nextParams);
+      Object.keys(ui).forEach(key => {
+        if (params[key] === undefined) return;
+        ui[key].input.value = params[key];
+        if (ui[key].number) ui[key].number.value = params[key];
+      });
+      orbitSignature = '';
+      updateLabels(ui);
+      rebuildOrbitVisuals();
+    }
+
+    function startSimulationFromAutoResult(index) {
+      const result = autoExperimentResults[index];
+      if (!result) return;
+      const replayStart = Math.max(0, Number(result.replay_start_s || result.pass_start_s || 0));
+      const replayEnd = Math.max(replayStart + 120, Number(result.replay_end_s || result.pass_end_s || replayStart + 600));
+
+      applyParamsToUi({
+        ...result.params_snapshot,
+        manualTime: replayStart,
+        timeScale: Math.min(Math.max(params.timeScale, 45), 180)
+      });
+
+      simTime = replayStart;
+      params.manualTime = replayStart;
+      running = true;
+      document.getElementById('playPause').textContent = '일시정지';
+      resetIntegration(true);
+      closeAnalysisView();
+
+      replayMode = {
+        end_s: replayEnd,
+        label: `${result.condition} · ${result.meaning}`,
+        started_at_s: replayStart
+      };
+
+      const badge = document.getElementById('replayBadge');
+      if (badge) {
+        badge.textContent = `자동 탐색 결과 재생 중: ${replayMode.label}`;
+        badge.classList.add('visible');
+      }
+
+      updateScene(0);
+      focusCameraOnPass();
+    }
+
+    function focusCameraOnPass() {
+      const sat = satelliteStateAt(simTime);
+      const obs = observerState(simTime);
+      const satScene = sat.positionKm.clone().multiplyScalar(KM_TO_SCENE);
+      const obsScene = obs.positionKm.clone().multiplyScalar(KM_TO_SCENE * 1.012);
+      const midpoint = obsScene.clone().lerp(satScene, 0.42);
+      const up = obs.up.clone().normalize();
+      const side = obs.east.clone().normalize();
+      const rangeScene = Math.max(2.8, satScene.distanceTo(obsScene));
+      controls.target.copy(midpoint);
+      camera.position.copy(midpoint)
+        .add(up.multiplyScalar(rangeScene * 1.25 + 3.6))
+        .add(side.multiplyScalar(rangeScene * 1.1 + 2.4));
+      camera.lookAt(midpoint);
+      controls.update();
+    }
+
+    function updateReplayCameraIfNeeded() {
+      if (!replayMode) return;
+      if (simTime > replayMode.end_s) {
+        replayMode = null;
+        const badge = document.getElementById('replayBadge');
+        if (badge) badge.classList.remove('visible');
+        return;
+      }
+      focusCameraOnPass();
+    }
+
+    function exportAutoExperimentCsv() {
+      if (!autoExperimentResults.length) {
+        window.alert('자동 탐색 결과가 없습니다. 먼저 자동 탐색 실행 버튼을 눌러 주세요.');
+        return;
+      }
+      downloadText(`satellite_auto_search_results.csv`, toCsv(autoExperimentResults), 'text/csv;charset=utf-8');
+    }
+
+    function toCsv(rows) {
+      if (!rows.length) return '';
+      const headers = Object.keys(rows[0]);
+      const escapeCell = value => {
+        const text = String(value ?? '');
+        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      return [headers.join(','), ...rows.map(row => headers.map(key => escapeCell(row[key])).join(','))].join('\n');
+    }
+
+    function downloadText(filename, content, type = 'text/plain;charset=utf-8') {
+      if (!content) {
+        window.alert('내보낼 데이터가 아직 없습니다. 시뮬레이션을 재생해 기록을 쌓아 주세요.');
+        return;
+      }
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportSamplesCsv() {
+      downloadText(`satellite_signal_samples_${Math.round(simTime)}s.csv`, toCsv(analysisSamples), 'text/csv;charset=utf-8');
+    }
+
+    function exportPassCsv() {
+      const passes = activePass ? [...passSummaries, roundPassSummary(activePass)] : passSummaries;
+      downloadText(`satellite_pass_summary_${Math.round(simTime)}s.csv`, toCsv(passes), 'text/csv;charset=utf-8');
+    }
+
+    function exportAnalysisJson() {
+      const payload = {
+        exported_at_sim_time_s: Number(simTime.toFixed(2)),
+        parameters: { ...params },
+        summary: getCurrentAnalysisSummary(),
+        samples: analysisSamples
+      };
+      downloadText(`satellite_signal_analysis_${Math.round(simTime)}s.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+    }
+
+    function readPresets() {
+      try {
+        const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function writePresets(presets) {
+      localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
+      refreshPresetList();
+    }
+
+    function currentParameterSnapshot() {
+      const snapshot = {};
+      for (const key of Object.keys(params)) snapshot[key] = params[key];
+      snapshot.manualTime = 0;
+      return snapshot;
+    }
+
+    function refreshPresetList() {
+      const list = document.getElementById('presetList');
+      if (!list) return;
+      const presets = readPresets();
+      list.innerHTML = '';
+      if (!presets.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '저장된 설정 없음';
+        list.appendChild(option);
+        return;
+      }
+      presets.forEach((preset, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = preset.name || `실험 조건 ${index + 1}`;
+        list.appendChild(option);
+      });
+    }
+
+    function saveCurrentPreset() {
+      const input = document.getElementById('presetName');
+      const name = (input.value || '').trim() || `실험 조건 ${new Date().toLocaleString('ko-KR')}`;
+      const presets = readPresets();
+      const existingIndex = presets.findIndex(preset => preset.name === name);
+      const preset = {
+        name,
+        saved_at: new Date().toISOString(),
+        parameters: currentParameterSnapshot()
+      };
+      if (existingIndex >= 0) presets[existingIndex] = preset;
+      else presets.push(preset);
+      writePresets(presets);
+      input.value = '';
+      window.alert(`현재 설정을 저장했습니다: ${name}`);
+    }
+
+    function applyParameterSnapshot(snapshot) {
+      for (const key of Object.keys(params)) {
+        if (typeof snapshot[key] === 'number' && Number.isFinite(snapshot[key])) {
+          params[key] = snapshot[key];
+        }
+      }
+      params.manualTime = 0;
+      simTime = 0;
+      for (const [key, item] of Object.entries(ui)) {
+        if (params[key] !== undefined) item.input.value = params[key];
+      }
+      orbitSignature = '';
+      resetIntegration(true);
+      updateLabels(ui);
+      rebuildOrbitVisuals();
+    }
+
+    function loadSelectedPreset() {
+      const list = document.getElementById('presetList');
+      const index = Number(list.value);
+      const presets = readPresets();
+      const preset = presets[index];
+      if (!preset) {
+        window.alert('불러올 실험 조건이 없습니다.');
+        return;
+      }
+      applyParameterSnapshot(preset.parameters || {});
+      window.alert(`실험 조건을 불러왔습니다: ${preset.name}`);
+    }
+
+    function deleteSelectedPreset() {
+      const list = document.getElementById('presetList');
+      const index = Number(list.value);
+      const presets = readPresets();
+      const preset = presets[index];
+      if (!preset) {
+        window.alert('삭제할 실험 조건이 없습니다.');
+        return;
+      }
+      if (!window.confirm(`삭제할까요?\n${preset.name}`)) return;
+      presets.splice(index, 1);
+      writePresets(presets);
+    }
+
+    function exportPresets() {
+      const payload = {
+        exported_at: new Date().toISOString(),
+        app: 'satellite_orbit_simulator',
+        presets: readPresets()
+      };
+      downloadText('satellite_experiment_presets.json', JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+    }
+
+    function importPresetsFromFile(event) {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || '{}'));
+          const incoming = Array.isArray(parsed) ? parsed : parsed.presets;
+          if (!Array.isArray(incoming)) throw new Error('invalid preset file');
+          const valid = incoming
+            .filter(item => item && typeof item === 'object' && item.parameters && typeof item.parameters === 'object')
+            .map((item, index) => ({
+              name: String(item.name || `가져온 실험 조건 ${index + 1}`),
+              saved_at: item.saved_at || new Date().toISOString(),
+              parameters: item.parameters
+            }));
+          if (!valid.length) throw new Error('no valid presets');
+          const merged = [...readPresets()];
+          valid.forEach(preset => {
+            const existingIndex = merged.findIndex(item => item.name === preset.name);
+            if (existingIndex >= 0) merged[existingIndex] = preset;
+            else merged.push(preset);
+          });
+          writePresets(merged);
+          window.alert(`${valid.length}개의 실험 조건을 가져왔습니다.`);
+        } catch (error) {
+          window.alert('설정 파일을 읽지 못했습니다. 이 시뮬레이터에서 내보낸 JSON 파일인지 확인해 주세요.');
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function orbitalPeriod() { return TWO_PI * Math.sqrt(Math.pow(params.semiMajor, 3) / MU); }
+    function meanMotion() { return Math.sqrt(MU / Math.pow(params.semiMajor, 3)); }
+
+    function solveKepler(M, e) {
+      let E = e < 0.8 ? M : Math.PI;
+      for (let i = 0; i < 14; i++) {
+        const f = E - e * Math.sin(E) - M;
+        const fp = 1 - e * Math.cos(E);
+        E -= f / fp;
+      }
+      return E;
+    }
+
+    function rotateZ(v, angle) {
+      const c = Math.cos(angle), s = Math.sin(angle);
+      return new THREE.Vector3(c * v.x - s * v.z, v.y, s * v.x + c * v.z);
+    }
+
+    function rotateX(v, angle) {
+      const c = Math.cos(angle), s = Math.sin(angle);
+      return new THREE.Vector3(v.x, c * v.y - s * v.z, s * v.y + c * v.z);
+    }
+
+    function satelliteStateKeplerAt(t) {
+      const a = params.semiMajor;
+      const e = params.eccentricity;
+      const n = meanMotion();
+      const M0 = params.meanAnomaly * DEG;
+      const M = normalizeAngle(M0 + n * t);
+      const E = solveKepler(M, e);
+      const xOrb = a * (Math.cos(E) - e);
+      const yOrb = a * Math.sqrt(1 - e * e) * Math.sin(E);
+      let r = new THREE.Vector3(xOrb, 0, yOrb);
+      r = rotateZ(r, params.argPerigee * DEG);
+      r = rotateX(r, params.inclination * DEG);
+      r = rotateZ(r, params.raan * DEG);
+      const rMag = r.length();
+      const speed = Math.sqrt(MU * (2 / rMag - 1 / a));
+      return { positionKm: r, radiusKm: rMag, speed, M, E };
+    }
+
+    function satelliteStateAt(t) {
+      return satelliteStateKeplerAt(t);
+    }
+
+    function normalizeAngle(angle) { return ((angle % TWO_PI) + TWO_PI) % TWO_PI; }
+    function earthRotationAngle(t) { return normalizeAngle(EARTH_ROT_RATE * t); }
+
+    function observerState(t) {
+      const lat = params.observerLat * DEG;
+      const lonInertial = params.observerLon * DEG + earthRotationAngle(t);
+      const positionKm = geoToVector(lat, lonInertial, EARTH_RADIUS_KM);
+      const up = positionKm.clone().normalize();
+      const east = new THREE.Vector3(-Math.sin(lonInertial), 0, Math.cos(lonInertial)).normalize();
+      const north = new THREE.Vector3(-Math.sin(lat) * Math.cos(lonInertial), Math.cos(lat), -Math.sin(lat) * Math.sin(lonInertial)).normalize();
+      const omegaCrossR = new THREE.Vector3(EARTH_ROT_RATE * positionKm.z, 0, -EARTH_ROT_RATE * positionKm.x);
+      return { positionKm, velocityKmS: omegaCrossR, up, east, north, lat, lonInertial };
+    }
+
+    function topocentric(satKm, obs) {
+      const rho = satKm.clone().sub(obs.positionKm);
+      const range = rho.length();
+      const east = rho.dot(obs.east);
+      const north = rho.dot(obs.north);
+      const up = rho.dot(obs.up);
+      const elevation = Math.asin(up / range);
+      const azimuth = normalizeAngle(Math.atan2(east, north));
+      return { range, elevation, azimuth, east, north, up, rho };
+    }
+
+    function signalStrength(elevation, rangeKm) {
+      const visibility = Math.max(0, Math.sin(elevation));
+      const scaledRange = rangeKm / 1000;
+      return params.signalGain * visibility / (scaledRange * scaledRange);
+    }
+
+    function rangeRateAt(t, topoNow) {
+      const step = 0.5;
+      const topo2 = topocentric(satelliteStateAt(t + step).positionKm, observerState(t + step));
+      return (topo2.range - topoNow.range) / step;
+    }
+
+    function observedFrequencyMHz(rangeRateKmS) { return params.carrierFreq * (1 - rangeRateKmS / C_KM_S); }
+
+    function rebuildOrbitVisuals() {
+      const signature = `${params.semiMajor}|${params.eccentricity}|${params.inclination}|${params.raan}|${params.argPerigee}|${params.meanAnomaly}`;
+      if (signature === orbitSignature) return;
+      orbitSignature = signature;
+
+      const pts = [];
+      const groundPts = [];
+      const samples = 520;
+      const period = orbitalPeriod();
+      for (let j = 0; j <= samples; j++) {
+        const t = period * j / samples;
+        const state = satelliteStateKeplerAt(t);
+        pts.push(state.positionKm.clone().multiplyScalar(KM_TO_SCENE));
+        groundPts.push(state.positionKm.clone().normalize().multiplyScalar((EARTH_RADIUS_KM + 18) * KM_TO_SCENE));
+      }
+      orbitLine.geometry.dispose();
+      orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+      groundTrackLine.geometry.dispose();
+      groundTrackLine.geometry = new THREE.BufferGeometry().setFromPoints(groundPts);
+    }
+
+    function updateScene(dt) {
+      const period = orbitalPeriod();
+      if (running) {
+        simTime += dt * params.timeScale;
+        params.manualTime = simTime;
+        ui.manualTime.input.max = Math.ceil(Math.max(period, simTime + period * 0.15));
+        ui.manualTime.input.value = params.manualTime;
+        updateLabels(ui);
+      } else {
+        simTime = params.manualTime;
+        ui.manualTime.input.max = Math.ceil(Math.max(period, simTime + period * 0.15));
+      }
+
+      const sat = satelliteStateAt(simTime);
+      const obs = observerState(simTime);
+      const topo = topocentric(sat.positionKm, obs);
+      const signal = signalStrength(topo.elevation, topo.range);
+      const signalRate = estimateSignalRate(simTime, signal);
+      const rr = rangeRateAt(simTime, topo);
+      const fObserved = observedFrequencyMHz(rr);
+      const dopplerHz = (fObserved - params.carrierFreq) * 1e6;
+
+      if (running && simTime >= lastSignalTime) {
+        const delta = simTime - lastSignalTime;
+        if (delta > 0 && delta < 20) signalIntegral += (lastSignal + signal) * 0.5 * delta;
+        lastSignal = signal;
+        lastSignalTime = simTime;
+      }
+
+      recordAnalysisSample(simTime, sat, topo, signal, signalRate, rr, dopplerHz, fObserved);
+
+      const theta = earthRotationAngle(simTime);
+      earthGroup.rotation.y = -theta;
+
+      satellite.position.copy(sat.positionKm).multiplyScalar(KM_TO_SCENE);
+      observer.position.copy(obs.positionKm).multiplyScalar(KM_TO_SCENE * 1.012);
+      horizonDisk.position.copy(observer.position);
+      horizonDisk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), obs.up.clone().normalize());
+
+      updateLine(lineOfSight, [observer.position, satellite.position]);
+      lineOfSight.material.color.set(topo.elevation > 0 ? 0x9cffb0 : 0xff7a7a);
+      lineOfSight.material.opacity = topo.elevation > 0 ? 0.9 : 0.25;
+      const satelliteScale = THREE.MathUtils.clamp(camera.position.distanceTo(satellite.position) / 10, 1, 2.8);
+      satellite.scale.setScalar(satelliteScale);
+
+      updateStatus(sat, topo, signal, signalRate, period, theta, rr, dopplerHz, fObserved);
+      updateObserverView(topo, signal);
+      pushGraphSample(simTime, signal, period);
+      updateSpectrum(signal, fObserved, dopplerHz);
+      drawGraph(period);
+    }
+
+    function estimateSignalRate(t, currentSignal) {
+      const step = 1;
+      const topo2 = topocentric(satelliteStateAt(t + step).positionKm, observerState(t + step));
+      return (signalStrength(topo2.elevation, topo2.range) - currentSignal) / step;
+    }
+
+    function updateLine(line, points) {
+      line.geometry.dispose();
+      line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+    }
+
+    function updateObserverView(topo, signal) {
+      const radius = 2.1;
+      const visible = topo.elevation >= 0;
+      const satPos = observerSkyPosition(topo.elevation, topo.azimuth, radius);
+
+      observerSatellite.position.copy(satPos);
+      observerSatellite.scale.setScalar(THREE.MathUtils.clamp(0.9 + signal * 0.7, 0.9, 2.3));
+      observerSatellite.material.color.set(visible ? 0xffffff : 0xff7a7a);
+
+      updateLine(observerSightLine, [new THREE.Vector3(0, 0.04, 0), satPos]);
+      observerSightLine.material.color.set(visible ? 0x75d6ff : 0xff7a7a);
+      observerSightLine.material.opacity = visible ? 0.9 : 0.42;
+
+      const showTrail = document.getElementById('observerTrailMode')?.checked;
+      observerTrailLine.visible = Boolean(showTrail);
+      if (showTrail) updateObserverTrail(radius);
+    }
+
+    function observerSkyPosition(elevation, azimuth, radius) {
+      const clampedElevation = Math.max(-25 * DEG, elevation);
+      const horizontalRadius = radius * Math.cos(clampedElevation);
+      const y = radius * Math.sin(clampedElevation);
+      const x = horizontalRadius * Math.sin(azimuth);
+      const z = -horizontalRadius * Math.cos(azimuth);
+      return new THREE.Vector3(x, y, z);
+    }
+
+    function updateObserverTrail(radius) {
+      const period = orbitalPeriod();
+      const samples = 190;
+      const start = Math.max(0, simTime - period * 0.22);
+      const end = simTime + period * 0.22;
+      const pts = [];
+      for (let i = 0; i <= samples; i++) {
+        const t = start + (end - start) * i / samples;
+        const topo = topocentric(satelliteStateAt(t).positionKm, observerState(t));
+        if (topo.elevation > -25 * DEG) pts.push(observerSkyPosition(topo.elevation, topo.azimuth, radius));
+      }
+      observerTrailLine.geometry.dispose();
+      observerTrailLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    }
+
+    function updateStatus(sat, topo, signal, signalRate, period, theta, rangeRate, dopplerHz, fObserved) {
+      const altitude = sat.radiusKm - EARTH_RADIUS_KM;
+      document.getElementById('statTime').textContent = `${simTime.toFixed(0)} s`;
+      document.getElementById('statEarthRot').textContent = `${(theta / DEG).toFixed(2)}°`;
+      document.getElementById('statPeriod').textContent = `${(period / 60).toFixed(1)} min`;
+      document.getElementById('statAltitude').textContent = `${altitude.toFixed(0)} km`;
+      document.getElementById('statVelocity').textContent = `${sat.speed.toFixed(2)} km/s`;
+      document.getElementById('statRange').textContent = `${topo.range.toFixed(0)} km`;
+      document.getElementById('statRangeRate').textContent = `${rangeRate >= 0 ? '+' : ''}${rangeRate.toFixed(3)} km/s`;
+      document.getElementById('statElevation').textContent = `${(topo.elevation / DEG).toFixed(1)}°`;
+      document.getElementById('statAzimuth').textContent = `${(topo.azimuth / DEG).toFixed(1)}°`;
+      document.getElementById('statDoppler').textContent = `${dopplerHz >= 0 ? '+' : ''}${dopplerHz.toFixed(0)} Hz`;
+      document.getElementById('statObservedFreq').textContent = `${fObserved.toFixed(6)} MHz`;
+      document.getElementById('statSignal').textContent = signal.toFixed(4);
+      document.getElementById('statSignalRate').textContent = `${signalRate >= 0 ? '+' : ''}${signalRate.toFixed(5)} /s`;
+      document.getElementById('statIntegral').textContent = signalIntegral.toFixed(2);
+      const visibility = document.getElementById('statVisibility');
+      visibility.textContent = topo.elevation > 0 ? '관측 가능' : '지평선 아래';
+      visibility.className = topo.elevation > 0 ? 'visible' : 'hidden';
+    }
+
+    function pushGraphSample(t, signal, period) {
+      if (!running) return;
+      if (graphSamples.length === 0 || t - graphSamples[graphSamples.length - 1].t > period / 360) graphSamples.push({ t, signal });
+      const windowStart = Math.max(0, t - period);
+      graphSamples = graphSamples.filter(p => p.t >= windowStart);
+      if (graphSamples.length > 520) graphSamples.shift();
+    }
+
+    function updateSpectrum(signal, fObserved, dopplerHz) {
+      const bins = cumulativeSpectrum.length;
+      const bwMHz = params.bandwidth / 1000;
+      const start = params.carrierFreq - bwMHz / 2;
+      const sigmaMHz = Math.max(0.002, bwMHz / 90);
+      const realTime = new Float32Array(bins);
+      for (let i = 0; i < bins; i++) {
+        const f = start + bwMHz * i / (bins - 1);
+        const x = (f - fObserved) / sigmaMHz;
+        const peak = signal * Math.exp(-0.5 * x * x);
+        const noise = 0.008 + 0.012 * pseudoNoise(i, simTime);
+        realTime[i] = noise + peak;
+        cumulativeSpectrum[i] = cumulativeSpectrum[i] * 0.998 + peak * 0.035;
+      }
+      drawSpectrum(realTime, fObserved, dopplerHz);
+    }
+
+    function pseudoNoise(i, t) {
+      const x = Math.sin(i * 12.9898 + Math.floor(t * 3) * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    }
+
+    function drawSpectrum(realTime, fObserved, dopplerHz) {
+      const canvas = document.getElementById('spectrumGraph');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = canvas.clientWidth * Math.min(devicePixelRatio, 2);
+      const h = canvas.height = canvas.clientHeight * Math.min(devicePixelRatio, 2);
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(2, 5, 12, 0.2)';
+      ctx.fillRect(0, 0, w, h);
+
+      const padL = 64, padR = 24, padT = 26, padB = 52;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      const useCumulative = document.getElementById('spectrumMode').checked;
+      const data = useCumulative ? cumulativeSpectrum : realTime;
+      const maxVal = Math.max(0.03, ...data);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.11)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const y = padT + plotH * i / 5;
+        ctx.moveTo(padL, y); ctx.lineTo(w - padR, y);
+      }
+      for (let i = 0; i <= 6; i++) {
+        const x = padL + plotW * i / 6;
+        ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH);
+      }
+      ctx.stroke();
+
+      ctx.beginPath();
+      for (let i = 0; i < data.length; i++) {
+        const x = padL + plotW * i / (data.length - 1);
+        const y = padT + plotH - (data[i] / maxVal) * plotH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = useCumulative ? '#ffcf70' : '#75d6ff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      const bwMHz = params.bandwidth / 1000;
+      const start = params.carrierFreq - bwMHz / 2;
+      const freqX = padL + ((fObserved - start) / bwMHz) * plotW;
+      ctx.beginPath();
+      ctx.moveTo(freqX, padT);
+      ctx.lineTo(freqX, padT + plotH);
+      ctx.strokeStyle = '#9cffb0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(232, 238, 252, 0.9)';
+      ctx.font = '20px system-ui';
+      ctx.fillText(useCumulative ? '누적 세기' : '실시간 세기', 12, 24);
+      ctx.font = '18px system-ui';
+      ctx.fillStyle = 'rgba(159, 176, 208, 0.95)';
+      ctx.fillText(`${start.toFixed(3)} MHz`, padL, h - 18);
+      ctx.fillText(`${(start + bwMHz).toFixed(3)} MHz`, w - 160, h - 18);
+      ctx.fillText(`도플러 ${dopplerHz >= 0 ? '+' : ''}${dopplerHz.toFixed(0)} Hz`, padL, 52);
+    }
+
+
+    function trapezoidAreaFromSamples(samples) {
+      if (!samples || samples.length < 2) return 0;
+      let area = 0;
+      for (let i = 1; i < samples.length; i++) {
+        const dt = samples[i].t - samples[i - 1].t;
+        if (dt > 0 && dt < 120) area += (samples[i - 1].signal + samples[i].signal) * 0.5 * dt;
+      }
+      return area;
+    }
+
+    function graphWindowIntegralStats(period) {
+      const windowStart = Math.max(0, simTime - period);
+      const samples = graphSamples.filter(p => p.t >= windowStart && p.t <= simTime);
+      const area = trapezoidAreaFromSamples(samples);
+      const duration = samples.length > 1 ? samples[samples.length - 1].t - samples[0].t : 0;
+      const maxSignal = Math.max(0.05, ...graphSamples.map(p => p.signal));
+      const rectangleArea = Math.max(1e-9, maxSignal * Math.max(1, duration));
+      const fillRatio = Math.max(0, Math.min(1, area / rectangleArea));
+      const avgSignal = duration > 0 ? area / duration : 0;
+      return { area, duration, maxSignal, rectangleArea, fillRatio, avgSignal };
+    }
+
+    function drawGraph(period) {
+      const canvas = document.getElementById('signalGraph');
+      const ctx = canvas.getContext('2d');
+      const pr = Math.min(devicePixelRatio, 2);
+      const w = canvas.width = canvas.clientWidth * pr;
+      const h = canvas.height = canvas.clientHeight * pr;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(2, 5, 12, 0.2)';
+      ctx.fillRect(0, 0, w, h);
+      const padL = 58, padR = 22, padT = 30, padB = 52;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      const maxSignal = Math.max(0.05, ...graphSamples.map(p => p.signal));
+      const windowStart = Math.max(0, simTime - period);
+      const windowEnd = windowStart + period;
+      const xFor = t => padL + ((t - windowStart) / (windowEnd - windowStart)) * plotW;
+      const yFor = s => padT + plotH - (s / maxSignal) * plotH;
+      const baseY = padT + plotH;
+      const integralStats = graphWindowIntegralStats(period);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) { const y = padT + plotH * i / 5; ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); }
+      for (let i = 0; i <= 6; i++) { const x = padL + plotW * i / 6; ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); }
+      ctx.stroke();
+
+      if (graphSamples.length > 1) {
+        const visibleSamples = graphSamples.filter(p => p.t >= windowStart && p.t <= simTime);
+
+        // 1) 적분 영역: 현재까지 실제로 누적한 부분만 강조해서 채웁니다.
+        if (visibleSamples.length > 1) {
+          const gradient = ctx.createLinearGradient(0, padT, 0, baseY);
+          gradient.addColorStop(0, 'rgba(255, 207, 112, 0.34)');
+          gradient.addColorStop(1, 'rgba(117, 214, 255, 0.08)');
+          ctx.beginPath();
+          visibleSamples.forEach((p, idx) => {
+            const x = xFor(p.t), y = yFor(p.signal);
+            if (idx === 0) ctx.moveTo(x, baseY), ctx.lineTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.lineTo(xFor(visibleSamples[visibleSamples.length - 1].t), baseY);
+          ctx.closePath();
+          ctx.fillStyle = gradient;
+          ctx.fill();
+
+          // 2) 사다리꼴 공식 시각화: 너무 촘촘하지 않게 일부 분할선만 표시합니다.
+          const stride = Math.max(1, Math.floor(visibleSamples.length / 38));
+          ctx.beginPath();
+          for (let i = 0; i < visibleSamples.length; i += stride) {
+            const x = xFor(visibleSamples[i].t);
+            ctx.moveTo(x, yFor(visibleSamples[i].signal));
+            ctx.lineTo(x, baseY);
+          }
+          ctx.strokeStyle = 'rgba(255, 207, 112, 0.22)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // 3) S(t) 곡선
+        ctx.beginPath();
+        graphSamples.forEach((p, idx) => {
+          const x = xFor(p.t), y = yFor(p.signal);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = '#75d6ff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      const currentX = xFor(simTime);
+      ctx.beginPath();
+      ctx.moveTo(currentX, padT);
+      ctx.lineTo(currentX, baseY);
+      ctx.strokeStyle = '#ffcf70';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // 그래프 안쪽에 적분값이 증가하는 막대를 표시합니다.
+      const barW = Math.min(250 * pr, plotW * 0.48);
+      const barH = 12 * pr;
+      const barX = w - padR - barW;
+      const barY = padT + 8 * pr;
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = 'rgba(255,207,112,0.86)';
+      ctx.fillRect(barX, barY, barW * integralStats.fillRatio, barH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = 'rgba(232, 238, 252, 0.90)';
+      ctx.font = `${20 * pr}px system-ui`;
+      ctx.fillText('S(t)', 12 * pr, 28 * pr);
+      ctx.fillText('t', w - 28 * pr, h - 12 * pr);
+
+      ctx.font = `${14 * pr}px system-ui`;
+      ctx.fillStyle = 'rgba(255, 232, 173, 0.95)';
+      ctx.fillText(`색칠된 면적 Qᵍ ≈ ${integralStats.area.toFixed(2)}`, barX, barY + 30 * pr);
+      ctx.fillStyle = 'rgba(159, 176, 208, 0.95)';
+      ctx.fillText(`평균 S ≈ ${integralStats.avgSignal.toFixed(4)}`, barX, barY + 49 * pr);
+      ctx.fillText(`max ${maxSignal.toFixed(3)}`, 12 * pr, 58 * pr);
+      ctx.fillText(`최근 ${(period / 60).toFixed(1)} min`, w - 165 * pr, h - 14 * pr);
+    }
+
+
+    function updateKeyboardCamera(dt) {
+      if (pressedKeys.size === 0) return;
+
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward).normalize();
+
+      const right = new THREE.Vector3();
+      right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+
+      const move = new THREE.Vector3();
+      if (pressedKeys.has('w')) move.add(forward);
+      if (pressedKeys.has('s')) move.sub(forward);
+      if (pressedKeys.has('d')) move.add(right);
+      if (pressedKeys.has('a')) move.sub(right);
+      if (move.lengthSq() === 0) return;
+
+      const distance = Math.max(controls.getDistance(), 4);
+      const speed = THREE.MathUtils.clamp(distance * 0.85 * params.cameraSpeed, 1, 2600);
+      move.normalize().multiplyScalar(speed * dt);
+
+      camera.position.add(move);
+      controls.target.add(move);
+    }
+
+    function animate(now) {
+      const dt = Math.min((now - lastFrame) / 1000, 0.05);
+      lastFrame = now;
+      updateKeyboardCamera(dt);
+      controls.update();
+      observerControls.update();
+      rebuildOrbitVisuals();
+      updateScene(dt);
+      updateReplayCameraIfNeeded();
+      resizeObserverRendererIfNeeded();
+      renderer.render(scene, camera);
+      observerRenderer.render(observerScene, observerCamera);
+      requestAnimationFrame(animate);
+    }
+
+    function resizeObserverRendererIfNeeded() {
+      const width = observerCanvas.clientWidth;
+      const height = observerCanvas.clientHeight;
+      const pr = Math.min(window.devicePixelRatio, 2);
+      if (observerCanvas.width !== Math.floor(width * pr) || observerCanvas.height !== Math.floor(height * pr)) {
+        observerRenderer.setPixelRatio(pr);
+        observerRenderer.setSize(width, height, false);
+        observerCamera.aspect = width / height;
+        observerCamera.updateProjectionMatrix();
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      resizeObserverRendererIfNeeded();
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
